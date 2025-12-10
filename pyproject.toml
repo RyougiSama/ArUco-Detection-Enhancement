@@ -5,5 +5,13 @@ description = "Add your description here"
 readme = "README.md"
 requires-python = ">=3.13"
 dependencies = [
+    "numpy>=2.2.6",
+    "opencv-contrib-python>=4.12.0.88",
     "pyqt5>=5.15.11",
 ]
+
+[tool.setuptools.packages.find]
+where = ["src"] # 明确告诉 setuptools 在 'src' 目录下查找包
+
+[project.scripts]
+cv_webcam_app = "cv_webcam.main:main"   # 定义命令名和入口函数

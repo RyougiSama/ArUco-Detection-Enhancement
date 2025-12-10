@@ -8,7 +8,7 @@ def test_qt():
     # 创建主窗口
     window = QWidget()
     window.setWindowTitle("我的第一个 PyQt 程序")
-    window.setGeometry(100, 100, 800, 600)  # (x, y, width, height)
+    window.setGeometry(100, 100, 1000, 800)  # (x, y, width, height)
 
     # 显示窗口
     window.show()
