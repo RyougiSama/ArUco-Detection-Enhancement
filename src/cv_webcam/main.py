@@ -1,8 +1,7 @@
 def main():
-    from cv_webcam.core.cv_proc import test_http
+    from cv_webcam.core.cv_proc import test_aruco
 
-    url = "http://10.70.74.169:4747/video"
-    test_http(url)
+    test_aruco("http://10.70.111.101:8080/video")
 
 
 if __name__ == "__main__":
