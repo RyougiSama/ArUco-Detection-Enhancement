@@ -4,28 +4,6 @@ import cv2
 from cv2.typing import MatLike
 
 
-def test_http(http_url: str):
-    cap = cv2.VideoCapture(http_url)
-
-    if not cap.isOpened():
-        print("Error: Could not open stream.")
-        return
-
-    while True:
-        ret, frame = cap.read()
-        if not ret:
-            print("Error: Could not read frame.")
-            break
-
-        cv2.imshow("Stream", frame)
-
-        if cv2.waitKey(1) & 0xFF == ord("q"):
-            break
-
-    cap.release()
-    cv2.destroyAllWindows()
-
-
 def generate_aruco():
     marker_size = 400  # marker影像大小
     marker_id = 20  # marker的ID
@@ -78,3 +56,48 @@ def draw_img():
     cv2.imshow("Img", img)
     cv2.waitKey(0)
     cv2.destroyAllWindows()
+
+
+def _calc_calib_points(
+    imgs: Sequence[MatLike], board_size: tuple[int, int] = (9, 6)
+) -> Sequence[MatLike]:
+    imgs_points = []
+    for i, img in enumerate(imgs):
+        gray = cv2.cvtColor(img, cv2.COLOR_BGR2GRAY)
+        ret, points = cv2.findChessboardCorners(gray, board_size)
+        if not ret:
+            raise ValueError(f"Chessboard corners not found in image {i}")
+        ret, points = cv2.find4QuadCornerSubpix(gray, points, (5, 5))
+        if not ret:
+            raise ValueError(f"Corner refinement failed in image {i}")
+        imgs_points.append(points)
+    return imgs_points
+
+
+def camera_calibrate(): ...
+
+
+def test_camera_calibrate(url: str):
+    cap = cv2.VideoCapture(url)
+    if not cap.isOpened():
+        raise RuntimeError("Could not open video stream")
+
+    try:
+        while True:
+            ret, frame = cap.read()
+            if not ret:
+                break
+            # try:
+            #     points = _calc_calib_points([frame])
+            # except ValueError:
+            #     points = []
+            # print("Detected points:", points)
+            cv2.imshow("Corner Detection", frame)
+            key_val = cv2.waitKey(1)
+            if key_val & 0xFF == ord("q"):
+                break
+            elif key_val & 0xFF == ord("s"):
+                cv2.imwrite(f"calib_frame_{cv2.getTickCount()}.png", frame)
+    finally:
+        cap.release()
+        cv2.destroyAllWindows()

@@ -1,10 +1,10 @@
-class A:
-    def __init__(self) -> None:
-        self.value = 42
-
-    def create(self):
-        self.test = 12
+import dis
 
 
-a = A()
-print(a.value)
+def add_numbers(a, b):
+    result = a + b
+    return result
+
+
+# 使用 dis.dis() 函数查看字节码
+dis.dis(add_numbers)
