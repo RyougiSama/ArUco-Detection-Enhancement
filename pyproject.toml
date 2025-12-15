@@ -11,7 +11,7 @@ dependencies = [
 ]
 
 [tool.setuptools.packages.find]
-where = ["src"] # 明确告诉 setuptools 在 'src' 目录下查找包
+where = ["src"]
 
 [project.scripts]
-cv_webcam_app = "cv_webcam.main:main"   # 定义命令名和入口函数
+cv_webcam_app = "cv_webcam.main:main"

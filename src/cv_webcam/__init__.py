@@ -15,25 +15,23 @@ def _setup_logging() -> None:
     log_file = LOGS_DIR / "app.log"
 
     app_logger = logging.getLogger("cv_webcam")
-    app_logger.setLevel(logging.INFO)
+    app_logger.setLevel(logging.DEBUG)
     app_logger.propagate = False
 
     formatter = logging.Formatter(
         "%(asctime)s - %(name)s - %(levelname)s - %(message)s"
     )
 
-    if not app_logger.hasHandlers():
-        file_handler = logging.FileHandler(log_file)
-        file_handler.setFormatter(formatter)
-        app_logger.addHandler(file_handler)
+    if app_logger.hasHandlers():
+        raise RuntimeError("Logging has already been set up.")
 
-        console_handler = logging.StreamHandler()
-        console_handler.setFormatter(formatter)
-        app_logger.addHandler(console_handler)
+    file_handler = logging.FileHandler(log_file)
+    file_handler.setFormatter(formatter)
+    app_logger.addHandler(file_handler)
 
-
-def get_logger(name: str) -> logging.Logger:
-    return logging.getLogger(f"cv_webcam.{name}")
+    console_handler = logging.StreamHandler()
+    console_handler.setFormatter(formatter)
+    app_logger.addHandler(console_handler)
 
 
 PROJECT_ROOT = _get_project_root()
@@ -45,4 +43,4 @@ for dir_path in [IMAGES_DIR, LOGS_DIR]:
 
 _setup_logging()
 
-__all__ = ["PROJECT_ROOT", "IMAGES_DIR", "LOGS_DIR", "get_logger"]
+__all__ = ["PROJECT_ROOT", "IMAGES_DIR", "LOGS_DIR"]

@@ -1,9 +1,9 @@
 from cv_webcam import core
 
 
-def main():
+def main() -> None:
     calibrator = core.CameraCalibrator()
-    calibrator.camera_calibrate()
+    calibrator.test_calibration()
 
 
 if __name__ == "__main__":
