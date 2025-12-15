@@ -50,6 +50,7 @@ class CameraCalibrator:
         self._img_points: list[MatLike] = []
         self._obj_p: MatLike = self._calc_obj_p()
         self._calib_params = CalibrationParams()
+        self.calib_file_path = cv_webcam.DATA_DIR / "calibration_params.yaml"
 
     def camera_calibrate(self) -> None:
         imgs = self._get_calib_imgs()
@@ -76,6 +77,40 @@ class CameraCalibrator:
         logger.debug(f"Camera matrix:\n{self._calib_params.camera_matrix}")
         logger.debug(f"Distortion coefficients:\n{self._calib_params.dist_coeffs}")
 
+    def save_calibration_params(self) -> None:
+        if (
+            self._calib_params.camera_matrix is None
+            or self._calib_params.dist_coeffs is None
+        ):
+            raise ValueError("Calibration parameters are not set.")
+
+        fs = cv2.FileStorage(str(self.calib_file_path), cv2.FILE_STORAGE_WRITE)
+        fs.write("camera_matrix", self._calib_params.camera_matrix)
+        fs.write("dist_coeffs", self._calib_params.dist_coeffs)
+        fs.write("rotation_vectors", np.array(self._calib_params.rvecs))
+        fs.write("translation_vectors", np.array(self._calib_params.tvecs))
+        fs.release()
+        logger.info(f"Calibration parameters saved to {self.calib_file_path}")
+
+    def load_calibration_params(self) -> None:
+        fs = cv2.FileStorage(str(self.calib_file_path), cv2.FILE_STORAGE_READ)
+
+        camera_matrix = fs.getNode("camera_matrix").mat()
+        dist_coeffs = fs.getNode("dist_coeffs").mat()
+        rvecs = fs.getNode("rotation_vectors").mat()
+        tvecs = fs.getNode("translation_vectors").mat()
+        fs.release()
+
+        if camera_matrix is None or dist_coeffs is None:
+            raise ValueError("Failed to load calibration parameters.")
+
+        self._calib_params._camera_matrix = camera_matrix
+        self._calib_params._dist_coeffs = dist_coeffs
+        self._calib_params._rvecs = [rvecs[i] for i in range(rvecs.shape[0])]
+        self._calib_params._tvecs = [tvecs[i] for i in range(tvecs.shape[0])]
+
+        logger.info(f"Calibration parameters loaded from {self.calib_file_path}")
+
     def undistort_image(self, img: MatLike) -> MatLike:
         if (
             self._calib_params.camera_matrix is None
@@ -91,18 +126,9 @@ class CameraCalibrator:
         return undistorted_img
 
     def test_calibration(self) -> None:
-        self.camera_calibrate()
-        test_img_path = cv_webcam.IMAGES_DIR / "calib_test.png"
-        img = cv2.imread(str(test_img_path))
-        if img is None:
-            raise FileNotFoundError(f"Test image not found: {test_img_path}")
-
-        undistorted_img = self.undistort_image(img)
-
-        cv2.imshow("Original Image", img)
-        cv2.imshow("Undistorted Image", undistorted_img)
-        cv2.waitKey(0)
-        cv2.destroyAllWindows()
+        self.load_calibration_params()
+        logger.info(f"Calibration matrix:\n{self._calib_params.camera_matrix}")
+        logger.info(f"Distortion coefficients:\n{self._calib_params.dist_coeffs}")
 
     def _get_calib_imgs(self) -> Sequence[MatLike]:
         imgs = []
