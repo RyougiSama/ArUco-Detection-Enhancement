@@ -1,4 +1,3 @@
-from datetime import datetime
+from cv_webcam import core
 
-timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-print("Current Timestamp:", timestamp)
+print(core.__all__)
