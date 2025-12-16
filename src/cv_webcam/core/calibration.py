@@ -21,23 +21,33 @@ class CalibrationParams:
         self._tvecs: list[MatLike] | None = None
 
     @property
-    def rms(self) -> float | None:
+    def rms(self) -> float:
+        if self._rms is None:
+            raise ValueError("RMS value is not set.")
         return self._rms
 
     @property
-    def camera_matrix(self) -> MatLike | None:
+    def camera_matrix(self) -> MatLike:
+        if self._camera_matrix is None:
+            raise ValueError("Camera matrix is not set.")
         return self._camera_matrix
 
     @property
-    def dist_coeffs(self) -> MatLike | None:
+    def dist_coeffs(self) -> MatLike:
+        if self._dist_coeffs is None:
+            raise ValueError("Distortion coefficients are not set.")
         return self._dist_coeffs
 
     @property
-    def rvecs(self) -> list[MatLike] | None:
+    def rvecs(self) -> list[MatLike]:
+        if self._rvecs is None:
+            raise ValueError("Rotation vectors are not set.")
         return self._rvecs
 
     @property
-    def tvecs(self) -> list[MatLike] | None:
+    def tvecs(self) -> list[MatLike]:
+        if self._tvecs is None:
+            raise ValueError("Translation vectors are not set.")
         return self._tvecs
 
     def set_calibration_result(
@@ -68,7 +78,26 @@ class CameraCalibrator:
         self._img_points: list[MatLike] = []
         self._obj_p: MatLike = self._calc_obj_p()
         self._calib_params = CalibrationParams()
-        self.calib_file_path = cv_webcam.DATA_DIR / "calibration_params.yaml"
+        self._calib_file_path = cv_webcam.DATA_DIR / "calibration_params.yaml"
+
+    @property
+    def calib_params(self) -> CalibrationParams:
+        if self._calib_params is None:
+            raise ValueError(
+                "Calibration parameters have not been set. Call load_calibration_params() or camera_calibrate() first."
+            )
+        return self._calib_params
+
+    def is_calibrated(self) -> bool:
+        """Checks if the camera has been calibrated.
+
+        Returns:
+            bool: True if calibrated, False otherwise.
+        """
+        return (
+            self._calib_params.camera_matrix is not None
+            and self._calib_params.dist_coeffs is not None
+        )
 
     def camera_calibrate(self) -> None:
         """Performs camera calibration using chessboard images.
@@ -109,14 +138,14 @@ class CameraCalibrator:
         ):
             raise ValueError("Calibration parameters are not set.")
 
-        fs = cv2.FileStorage(str(self.calib_file_path), cv2.FILE_STORAGE_WRITE)
+        fs = cv2.FileStorage(str(self._calib_file_path), cv2.FILE_STORAGE_WRITE)
         fs.write("rms", float(self._calib_params.rms))
         fs.write("camera_matrix", self._calib_params.camera_matrix)
         fs.write("dist_coeffs", self._calib_params.dist_coeffs)
         fs.write("rotation_vectors", np.array(self._calib_params.rvecs))
         fs.write("translation_vectors", np.array(self._calib_params.tvecs))
         fs.release()
-        logger.info(f"Calibration parameters saved to {self.calib_file_path}")
+        logger.info(f"Calibration parameters saved to {self._calib_file_path}")
 
     def load_calibration_params(self) -> None:
         """Loads calibration parameters from a YAML file.
@@ -126,11 +155,11 @@ class CameraCalibrator:
             ValueError: If RMS value is missing in the calibration file.
             ValueError: If calibration parameters cannot be loaded.
         """
-        fs = cv2.FileStorage(str(self.calib_file_path), cv2.FILE_STORAGE_READ)
+        fs = cv2.FileStorage(str(self._calib_file_path), cv2.FILE_STORAGE_READ)
 
         if not fs.isOpened():
             raise FileNotFoundError(
-                f"Failed to open calibration file at {self.calib_file_path}"
+                f"Failed to open calibration file at {self._calib_file_path}"
             )
 
         rms_node = fs.getNode("rms")
@@ -159,7 +188,7 @@ class CameraCalibrator:
             rms, camera_matrix, dist_coeffs, rvecs_list, tvecs_list
         )
 
-        logger.info(f"Calibration parameters loaded from {self.calib_file_path}")
+        logger.info(f"Calibration parameters loaded from {self._calib_file_path}")
 
     def undistort_image(self, img: MatLike) -> MatLike:
         """Undistorts the given image using the loaded calibration parameters.
