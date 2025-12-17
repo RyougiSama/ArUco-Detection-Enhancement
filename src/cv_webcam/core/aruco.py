@@ -69,11 +69,6 @@ class ArucoDetector:
         corners, ids, _ = self._detector.detectMarkers(img)
         return corners, ids
 
-    def draw_detected_markers(
-        self, img: MatLike, corners: Sequence[MatLike], ids: MatLike
-    ) -> MatLike:
-        return cv2.aruco.drawDetectedMarkers(img, corners, ids)
-
     def single_estimate_pose(
         self, corners_per_marker: MatLike
     ) -> tuple[MatLike, MatLike]:
@@ -82,7 +77,7 @@ class ArucoDetector:
             or self._calib_params.dist_coeffs is None
         ):
             raise ValueError("Calibration parameters are not set.")
-        ret, _rvec, _tvec = cv2.solvePnP(
+        ret, rvec, tvec = cv2.solvePnP(
             self._obj_points,
             corners_per_marker,
             self._calib_params.camera_matrix,
@@ -90,31 +85,77 @@ class ArucoDetector:
         )
         if not ret:
             raise RuntimeError("Pose estimation failed.")
-        return _rvec, _tvec
+        return rvec, tvec
+
+    def is_rotation_matrix(self, R: MatLike) -> bool:
+        Rt = np.transpose(R)
+        should_be_identity = np.dot(Rt, R)
+        _I = np.identity(3, dtype=R.dtype)
+        _n = np.linalg.norm(_I - should_be_identity)
+        return bool(_n < 1e-6)
+
+    def rotation_matrix_to_euler_angles(self, R: MatLike) -> MatLike:
+        assert self.is_rotation_matrix(R)
+
+        sy = np.sqrt(R[0, 0] * R[0, 0] + R[1, 0] * R[1, 0])
+
+        singular = sy < 1e-6
+
+        if not singular:
+            x = np.arctan2(R[2, 1], R[2, 2])
+            y = np.arctan2(-R[2, 0], sy)
+            z = np.arctan2(R[1, 0], R[0, 0])
+        else:
+            x = np.arctan2(-R[1, 2], R[1, 1])
+            y = np.arctan2(-R[2, 0], sy)
+            z = 0
+
+        return np.array([x, y, z])
 
     def test_detector(self, url: str) -> None:
         cap = cv2.VideoCapture(url)
         if not cap.isOpened():
             raise RuntimeError("Could not open video stream")
-        while True:
-            ret, frame = cap.read()
-            if not ret:
-                break
-            corners, ids = self.detect_markers(frame)
-            if ids is not None:
-                frame = self.draw_detected_markers(frame, corners, ids)
-                rvec, tvec = self.single_estimate_pose(corners[0])
 
-                frame = cv2.drawFrameAxes(
-                    frame,
-                    self._calib_params.camera_matrix,
-                    self._calib_params.dist_coeffs,
-                    rvec,
-                    tvec,
-                    1.2 * self.config.marker_length,
-                )
-            cv2.imshow("Aruco Detection", frame)
-            if cv2.waitKey(1) & 0xFF == ord("q"):
-                break
-        cap.release()
-        cv2.destroyAllWindows()
+        try:
+            while True:
+                ret, frame = cap.read()
+                if not ret:
+                    break
+                corners, ids = self.detect_markers(frame)
+                if ids is not None:
+                    for corners_per_marker, _ in zip(corners, ids):
+                        rvec, tvec = self.single_estimate_pose(corners_per_marker)
+                        rotation_matrix, _ = cv2.Rodrigues(rvec)
+                        assert self.is_rotation_matrix(rotation_matrix)
+                        cv2.drawFrameAxes(
+                            frame,
+                            self._calib_params.camera_matrix,
+                            self._calib_params.dist_coeffs,
+                            rvec,
+                            tvec,
+                            1.2 * self.config.marker_length,
+                        )
+                        dist = np.linalg.norm(tvec)
+                        euler_angles = self.rotation_matrix_to_euler_angles(
+                            rotation_matrix
+                        )
+                        roll, pitch, yaw = np.degrees(euler_angles)
+                        text_str = f"Dist: {dist:.2f} mm Roll: {roll:.2f}, Pitch: {pitch:.2f}, Yaw: {yaw:.2f}"
+                        cv2.putText(
+                            frame,
+                            text_str,
+                            (20, 20),
+                            cv2.FONT_HERSHEY_SIMPLEX,
+                            0.5,
+                            (0, 255, 0),
+                            2,
+                        )
+
+                cv2.imshow("Aruco Detection", frame)
+                key_val = cv2.waitKey(1) & 0xFF
+                if key_val == ord("q") or key_val == 27:
+                    break
+        finally:
+            cap.release()
+            cv2.destroyAllWindows()
