@@ -23,7 +23,7 @@ def _setup_logging() -> None:
     )
 
     if app_logger.hasHandlers():
-        raise RuntimeError("Logging has already been set up.")
+        return
 
     file_handler = logging.FileHandler(log_file)
     file_handler.setFormatter(formatter)
@@ -39,9 +39,12 @@ IMAGES_DIR = PROJECT_ROOT / "images"
 LOGS_DIR = PROJECT_ROOT / "logs"
 DATA_DIR = PROJECT_ROOT / "data"
 
-for dir_path in [IMAGES_DIR, LOGS_DIR, DATA_DIR]:
-    dir_path.mkdir(exist_ok=True)
 
-_setup_logging()
+def init_app() -> None:
+    """Initializes runtime directories and logging."""
+    for dir_path in [IMAGES_DIR, LOGS_DIR, DATA_DIR]:
+        dir_path.mkdir(exist_ok=True)
+    _setup_logging()
 
-__all__ = ["PROJECT_ROOT", "IMAGES_DIR", "LOGS_DIR", "DATA_DIR"]
+
+__all__ = ["PROJECT_ROOT", "IMAGES_DIR", "LOGS_DIR", "DATA_DIR", "init_app"]

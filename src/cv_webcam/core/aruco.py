@@ -4,8 +4,9 @@ import cv2
 import numpy as np
 from cv2.typing import MatLike
 
-import cv_webcam
-from cv_webcam.core import CalibrationParams
+from cv_webcam import IMAGES_DIR
+
+from .calibration import CalibrationParams
 
 
 class ArucoConfig:
@@ -35,7 +36,7 @@ class ArucoGenerator:
             borderBits=self.config.marker_border,
         )
         if save:
-            filepath = cv_webcam.IMAGES_DIR / "aruco" / f"aruco_marker_{marker_id}.png"
+            filepath = IMAGES_DIR / "aruco" / f"aruco_marker_{marker_id}.png"
             cv2.imwrite(str(filepath), marker_img)
         return marker_img
 
@@ -98,7 +99,6 @@ class ArucoDetector:
         assert self.is_rotation_matrix(R)
 
         sy = np.sqrt(R[0, 0] * R[0, 0] + R[1, 0] * R[1, 0])
-
         singular = sy < 1e-6
 
         if not singular:
@@ -145,9 +145,9 @@ class ArucoDetector:
                         cv2.putText(
                             frame,
                             text_str,
-                            (20, 20),
+                            (50, 50),
                             cv2.FONT_HERSHEY_SIMPLEX,
-                            0.5,
+                            1,
                             (0, 255, 0),
                             2,
                         )

@@ -5,7 +5,7 @@ import cv2
 import numpy as np
 from cv2.typing import MatLike
 
-import cv_webcam
+from cv_webcam import DATA_DIR
 
 logger = logging.getLogger(__name__)
 
@@ -78,7 +78,7 @@ class CameraCalibrator:
         self._img_points: list[MatLike] = []
         self._obj_p: MatLike = self._calc_obj_p()
         self._calib_params = CalibrationParams()
-        self._calib_file_path = cv_webcam.DATA_DIR / "calibration_params.yaml"
+        self._calib_file_path = DATA_DIR / "calibration_params.yaml"
 
     @property
     def calib_params(self) -> CalibrationParams:
@@ -224,7 +224,9 @@ class CameraCalibrator:
 
     def _get_calib_imgs(self) -> Sequence[MatLike]:
         imgs = []
-        calib_dir = cv_webcam.IMAGES_DIR / "calibration"
+        from cv_webcam import IMAGES_DIR
+
+        calib_dir = IMAGES_DIR / "calibration"
 
         for item in calib_dir.glob("*.png"):
             img = cv2.imread(str(item))

@@ -2,7 +2,7 @@ from datetime import datetime
 
 import cv2
 
-import cv_webcam
+from cv_webcam import IMAGES_DIR
 
 
 def img_capture(url: str, focus_dist: str) -> None:
@@ -23,9 +23,7 @@ def img_capture(url: str, focus_dist: str) -> None:
             elif key == ord("s"):
                 timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
                 save_path = (
-                    cv_webcam.IMAGES_DIR
-                    / "calibration"
-                    / f"calib_f{focus_dist}_{timestamp}.png"
+                    IMAGES_DIR / "calibration" / f"calib_f{focus_dist}_{timestamp}.png"
                 )
                 cv2.imwrite(str(save_path), frame)
                 print(f"已保存: {save_path.name}")
