@@ -1,17 +1,23 @@
 import cv_webcam
 from cv_webcam import core
+from cv_webcam.aruco_exp import experiment
+from cv_webcam.core import utils
+
+
+def make_baseline_imgs(url: str) -> None:
+    save_path = cv_webcam.IMAGES_DIR / "experiment" / "raw"
+    utils.img_capture(url, save_path)
+
+
+def test_detector(url: str) -> None:
+    detector = core.create_aruco_detector(marker_length=41)
+    detector.test_detector(url)
 
 
 def main() -> None:
     cv_webcam.init_app()
-    calibrator = core.CameraCalibrator()
-    calibrator.load_calibration_params()
-    cfg = core.ArucoConfig(marker_length=41)
-    # gen = core.ArucoGenerator(cfg)
-    # gen.test_generator()
-    detector = core.ArucoDetector(cfg, calibrator.calib_params)
-    url = "http://10.54.204.186:8080/video"
-    detector.test_detector(url)
+    # url = "http://10.54.204.186:8080/video"
+    experiment.test_exp()
 
 
 if __name__ == "__main__":

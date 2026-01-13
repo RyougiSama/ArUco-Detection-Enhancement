@@ -1,5 +1,5 @@
+from .aruco import ArucoConfig, ArucoDetector, ArucoGenerator, create_aruco_detector
 from .calibration import CalibrationParams, CameraCalibrator
-from .aruco import ArucoConfig, ArucoGenerator, ArucoDetector
 
 __all__ = [
     "CalibrationParams",
@@ -7,4 +7,5 @@ __all__ = [
     "ArucoConfig",
     "ArucoGenerator",
     "ArucoDetector",
+    "create_aruco_detector",
 ]

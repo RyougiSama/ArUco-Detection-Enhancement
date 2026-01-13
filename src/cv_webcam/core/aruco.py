@@ -1,3 +1,4 @@
+from dataclasses import dataclass
 from typing import Sequence
 
 import cv2
@@ -6,7 +7,7 @@ from cv2.typing import MatLike
 
 from cv_webcam import IMAGES_DIR
 
-from .calibration import CalibrationParams
+from .calibration import CalibrationParams, CameraCalibrator
 
 
 class ArucoConfig:
@@ -46,6 +47,15 @@ class ArucoGenerator:
         cv2.imshow("Aruco Marker", marker_img)
         cv2.waitKey(0)
         cv2.destroyAllWindows()
+
+
+@dataclass
+class ArucoData:
+    marker_id: int
+    distance: float
+    roll: float
+    pitch: float
+    yaw: float
 
 
 class ArucoDetector:
@@ -112,6 +122,59 @@ class ArucoDetector:
 
         return np.array([x, y, z])
 
+    def single_aruco_detection(
+        self, frame: MatLike, display_info: bool = True
+    ) -> tuple[MatLike, ArucoData | None]:
+        corners, ids = self.detect_markers(frame)
+
+        if ids is None:
+            return frame, None
+
+        for corners_per_marker, marker_id in zip(corners, ids):
+            rvec, tvec = self.single_estimate_pose(corners_per_marker)
+            rotation_matrix, _ = cv2.Rodrigues(rvec)
+            if not self.is_rotation_matrix(rotation_matrix):
+                raise ValueError("Invalid rotation matrix obtained.")
+
+            cv2.drawFrameAxes(
+                frame,
+                self._calib_params.camera_matrix,
+                self._calib_params.dist_coeffs,
+                rvec,
+                tvec,
+                1.1 * self.config.marker_length,
+            )
+
+            dist = np.linalg.norm(tvec)
+            euler_angles = self.rotation_matrix_to_euler_angles(rotation_matrix)
+            roll, pitch, yaw = np.degrees(euler_angles)
+
+            if display_info:
+                text_str = f"ID: {marker_id[0]} Dist: {dist:.2f} mm Roll: {roll:.2f}, Pitch: {pitch:.2f}, Yaw: {yaw:.2f}"
+                cv2.putText(
+                    frame,
+                    text_str,
+                    (50, 50),
+                    cv2.FONT_HERSHEY_SIMPLEX,
+                    1,
+                    (0, 0, 255),
+                    2,
+                )
+
+        return frame, ArucoData(
+            marker_id=int(ids[0]),
+            distance=dist,  # type: ignore
+            roll=roll,
+            pitch=pitch,
+            yaw=yaw,
+        )
+
+    def can_be_detected(self, img: MatLike, expect_id: int | None = None) -> bool:
+        _, data = self.single_aruco_detection(img, False)
+        if expect_id is None:
+            return data is not None
+        return data is not None and expect_id == data.marker_id
+
     def test_detector(self, url: str) -> None:
         cap = cv2.VideoCapture(url)
         if not cap.isOpened():
@@ -122,35 +185,7 @@ class ArucoDetector:
                 ret, frame = cap.read()
                 if not ret:
                     break
-                corners, ids = self.detect_markers(frame)
-                if ids is not None:
-                    for corners_per_marker, _ in zip(corners, ids):
-                        rvec, tvec = self.single_estimate_pose(corners_per_marker)
-                        rotation_matrix, _ = cv2.Rodrigues(rvec)
-                        assert self.is_rotation_matrix(rotation_matrix)
-                        cv2.drawFrameAxes(
-                            frame,
-                            self._calib_params.camera_matrix,
-                            self._calib_params.dist_coeffs,
-                            rvec,
-                            tvec,
-                            1.2 * self.config.marker_length,
-                        )
-                        dist = np.linalg.norm(tvec)
-                        euler_angles = self.rotation_matrix_to_euler_angles(
-                            rotation_matrix
-                        )
-                        roll, pitch, yaw = np.degrees(euler_angles)
-                        text_str = f"Dist: {dist:.2f} mm Roll: {roll:.2f}, Pitch: {pitch:.2f}, Yaw: {yaw:.2f}"
-                        cv2.putText(
-                            frame,
-                            text_str,
-                            (50, 50),
-                            cv2.FONT_HERSHEY_SIMPLEX,
-                            1,
-                            (0, 255, 0),
-                            2,
-                        )
+                frame, _ = self.single_aruco_detection(frame)
 
                 cv2.imshow("Aruco Detection", frame)
                 key_val = cv2.waitKey(1) & 0xFF
@@ -159,3 +194,10 @@ class ArucoDetector:
         finally:
             cap.release()
             cv2.destroyAllWindows()
+
+
+def create_aruco_detector(marker_length: int) -> ArucoDetector:
+    calibrator = CameraCalibrator()
+    calibrator.load_calibration_params()
+    cfg = ArucoConfig(marker_length=marker_length)
+    return ArucoDetector(cfg, calibrator.calib_params)
