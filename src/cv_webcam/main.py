@@ -1,6 +1,6 @@
 import cv_webcam
 from cv_webcam import core
-from cv_webcam.aruco_exp import experiment
+from cv_webcam.aruco_exp import experiment, dataset_generator
 from cv_webcam.core import utils
 
 
@@ -16,8 +16,9 @@ def test_detector(url: str) -> None:
 
 def main() -> None:
     cv_webcam.init_app()
-    # url = "http://10.54.204.186:8080/video"
-    experiment.test_exp()
+    experiment.run_experiment()
+    if False:
+        dataset_generator.generate_dataset()
 
 
 if __name__ == "__main__":
