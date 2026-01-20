@@ -136,20 +136,20 @@ class ArucoDetector:
             if not self.is_rotation_matrix(rotation_matrix):
                 raise ValueError("Invalid rotation matrix obtained.")
 
-            cv2.drawFrameAxes(
-                frame,
-                self._calib_params.camera_matrix,
-                self._calib_params.dist_coeffs,
-                rvec,
-                tvec,
-                1.1 * self.config.marker_length,
-            )
-
             dist = np.linalg.norm(tvec)
             euler_angles = self.rotation_matrix_to_euler_angles(rotation_matrix)
             roll, pitch, yaw = np.degrees(euler_angles)
 
             if display_info:
+                cv2.drawFrameAxes(
+                    frame,
+                    self._calib_params.camera_matrix,
+                    self._calib_params.dist_coeffs,
+                    rvec,
+                    tvec,
+                    1.1 * self.config.marker_length,
+                )
+
                 text_str = f"ID: {marker_id[0]} Dist: {dist:.2f} mm Roll: {roll:.2f}, Pitch: {pitch:.2f}, Yaw: {yaw:.2f}"
                 cv2.putText(
                     frame,

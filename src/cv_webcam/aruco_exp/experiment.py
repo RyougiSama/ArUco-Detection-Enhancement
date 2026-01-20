@@ -260,6 +260,7 @@ def display_evaluation_results() -> dict[str, dict[str, dict[str, float]]]:
     results = {}
 
     filter_configs = [
+        ("No Filter", False, False),
         ("Gaussian Pre-filter", True, False),
         ("Median Post-filter", False, True),
         ("Both Filters", True, True),
@@ -320,7 +321,7 @@ def display_evaluation_results() -> dict[str, dict[str, dict[str, float]]]:
 def plot_evaluation_results(save: bool = False) -> None:
     """Plot evaluation results as grouped bar charts.
 
-    Creates 3 subplots, one for each filter configuration, showing
+    Creates 4 subplots in 2x2 layout, one for each filter configuration, showing
     detection success rates for different preprocessing methods.
 
     Args:
@@ -330,16 +331,21 @@ def plot_evaluation_results(save: bool = False) -> None:
     # Collect data
     results = display_evaluation_results()
 
-    # Prepare figure
+    # Prepare figure with 2x2 layout
     fig, axes = plt.subplots(
-        1,
-        3,
-        figsize=(18, 6),
+        2,
+        2,
+        figsize=(16, 10),
     )
     # Use tight_layout with rect to reserve space for suptitle
-    fig.tight_layout(rect=(0, 0, 1, 0.93))
+    fig.tight_layout(rect=(0, 0, 1, 0.96), h_pad=3.0, w_pad=2.5)
 
-    filter_configs = ["Gaussian Pre-filter", "Median Post-filter", "Both Filters"]
+    filter_configs = [
+        "No Filter",
+        "Gaussian Pre-filter",
+        "Median Post-filter",
+        "Both Filters",
+    ]
     preprocessing_methods: list[Literal["none", "clahe", "retinex"]] = [
         "none",
         "clahe",
@@ -354,7 +360,10 @@ def plot_evaluation_results(save: bool = False) -> None:
     # Colors
     colors = {"low_light": "#3498db", "non_uniform": "#e74c3c"}
 
-    for idx, (ax, filter_name) in enumerate(zip(axes, filter_configs)):
+    # Flatten axes array for easier iteration
+    axes_flat = axes.flatten()
+
+    for idx, (ax, filter_name) in enumerate(zip(axes_flat, filter_configs)):
         low_light_rates = [
             results[filter_name][prep]["low_light"] for prep in preprocessing_methods
         ]
@@ -428,17 +437,24 @@ def plot_evaluation_results(save: bool = False) -> None:
 def plot_performance_comparison(save: bool = False) -> None:
     """Plot processing time comparison for different methods.
 
+    Creates 4 subplots in 2x2 layout for each filter configuration.
+
     Args:
         save: If True, save to PDF file. If False, display interactively.
     """
     # Collect data
     results = display_evaluation_results()
 
-    # Prepare figure
-    fig, axes = plt.subplots(1, 3, figsize=(18, 6))
-    fig.tight_layout(rect=(0, 0, 1, 0.94))
+    # Prepare figure with 2x2 layout
+    fig, axes = plt.subplots(2, 2, figsize=(16, 10))
+    fig.tight_layout(rect=(0, 0, 1, 0.96), h_pad=3.0, w_pad=2.5)
 
-    filter_configs = ["Gaussian Pre-filter", "Median Post-filter", "Both Filters"]
+    filter_configs = [
+        "No Filter",
+        "Gaussian Pre-filter",
+        "Median Post-filter",
+        "Both Filters",
+    ]
     preprocessing_methods: list[Literal["none", "clahe", "retinex"]] = [
         "none",
         "clahe",
@@ -453,7 +469,10 @@ def plot_performance_comparison(save: bool = False) -> None:
     # Colors for different datasets
     colors = {"low_light": "#9b59b6", "non_uniform": "#f39c12", "total": "#2ecc71"}
 
-    for idx, (ax, filter_name) in enumerate(zip(axes, filter_configs)):
+    # Flatten axes array for easier iteration
+    axes_flat = axes.flatten()
+
+    for idx, (ax, filter_name) in enumerate(zip(axes_flat, filter_configs)):
         time_low_light = [
             results[filter_name][prep]["time_low_light"]
             for prep in preprocessing_methods
@@ -557,9 +576,7 @@ def run_experiment() -> None:
     # draw_low_light_imgs(save=True)
     # draw_non_uniform_imgs(save=True)
     # test_raw_dataset()
-    # run_detector_evaluation(
-    #     dataset="all", preprocessing="retinex", use_post_filter=False
-    # )
-    # plot_evaluation_results(save=True)
+    # run_detector_evaluation(dataset="all", preprocessing="retinex")
+    plot_evaluation_results(save=True)
     plot_performance_comparison(save=True)
     # visulize_test()
