@@ -177,20 +177,40 @@ def plot_comparison_simple(results: list[dict], save_path: Path | None = None) -
 
 
 def plot_evaluation_results(
-    results: dict[str, dict[str, dict[str, float]]], save: bool = False
+    results: dict[str, dict[str, dict[str, float]]],
+    save: bool = False,
+    algorithm_order: list[str] | None = None,
+    algorithm_labels: dict[str, str] | None = None,
 ) -> None:
     """Plot comprehensive evaluation results as grouped bar charts.
 
     Args:
         results: Nested dict {filter_config: {preprocessing: {metric: value}}}
         save: If True, save to PDF. If False, display interactively.
+        algorithm_order: Custom order of algorithms to display. If None, use default.
+        algorithm_labels: Custom display labels for algorithms. If None, use default.
     """
     fig, axes = plt.subplots(2, 2, figsize=(16, 10))
     fig.tight_layout(rect=(0, 0, 1, 0.96), h_pad=3.0, w_pad=2.5)
 
     filter_configs = list(results.keys())
-    preprocessing_methods = ["none", "clahe", "retinex"]
-    preprocessing_labels = ["None", "CLAHE", "Retinex"]
+
+    # Use custom algorithm order or default
+    if algorithm_order is None:
+        preprocessing_methods = ["none", "clahe", "retinex"]
+    else:
+        preprocessing_methods = algorithm_order
+
+    # Use custom labels or generate from algorithm names
+    if algorithm_labels is None:
+        default_labels = {"none": "None", "clahe": "CLAHE", "retinex": "Retinex"}
+        preprocessing_labels = [
+            default_labels.get(m, m.upper()) for m in preprocessing_methods
+        ]
+    else:
+        preprocessing_labels = [
+            algorithm_labels.get(m, m.upper()) for m in preprocessing_methods
+        ]
 
     x = np.arange(len(preprocessing_methods))
     width = 0.35
@@ -263,20 +283,40 @@ def plot_evaluation_results(
 
 
 def plot_performance_comparison(
-    results: dict[str, dict[str, dict[str, float]]], save: bool = False
+    results: dict[str, dict[str, dict[str, float]]],
+    save: bool = False,
+    algorithm_order: list[str] | None = None,
+    algorithm_labels: dict[str, str] | None = None,
 ) -> None:
     """Plot processing time comparison for different methods.
 
     Args:
         results: Nested dict {filter_config: {preprocessing: {metric: value}}}
         save: If True, save to PDF. If False, display interactively.
+        algorithm_order: Custom order of algorithms to display. If None, use default.
+        algorithm_labels: Custom display labels for algorithms. If None, use default.
     """
     fig, axes = plt.subplots(2, 2, figsize=(16, 10))
     fig.tight_layout(rect=(0, 0, 1, 0.96), h_pad=3.0, w_pad=2.5)
 
     filter_configs = list(results.keys())
-    preprocessing_methods = ["none", "clahe", "retinex"]
-    preprocessing_labels = ["None", "CLAHE", "Retinex"]
+
+    # Use custom algorithm order or default
+    if algorithm_order is None:
+        preprocessing_methods = ["none", "clahe", "retinex"]
+    else:
+        preprocessing_methods = algorithm_order
+
+    # Use custom labels or generate from algorithm names
+    if algorithm_labels is None:
+        default_labels = {"none": "None", "clahe": "CLAHE", "retinex": "Retinex"}
+        preprocessing_labels = [
+            default_labels.get(m, m.upper()) for m in preprocessing_methods
+        ]
+    else:
+        preprocessing_labels = [
+            algorithm_labels.get(m, m.upper()) for m in preprocessing_methods
+        ]
 
     x = np.arange(len(preprocessing_methods))
     width = 0.28

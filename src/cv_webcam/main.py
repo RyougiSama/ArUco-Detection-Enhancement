@@ -47,36 +47,44 @@ def main() -> None:
         }
         configs = [
             experiment.ExperimentConfig(
-                dataset="low_light", algorithm="none", algorithm_params=default_filters
-            ),
-            experiment.ExperimentConfig(
                 dataset="low_light",
-                algorithm="clahe",
-                algorithm_params={**default_filters, "clip_limit": 2.0},
+                algorithm="retinex",
+                algorithm_params={
+                    **default_filters,
+                    "sigma": 80,
+                    "use_log_scale": False,
+                },
             ),
             experiment.ExperimentConfig(
                 dataset="low_light",
                 algorithm="retinex",
-                algorithm_params={**default_filters, "sigma": 80},
-            ),
-            experiment.ExperimentConfig(
-                dataset="non_uniform",
-                algorithm="none",
-                algorithm_params=default_filters,
-            ),
-            experiment.ExperimentConfig(
-                dataset="non_uniform",
-                algorithm="clahe",
-                algorithm_params={**default_filters, "clip_limit": 2.0},
+                algorithm_params={
+                    **default_filters,
+                    "sigma": 80,
+                    "use_log_scale": True,
+                },
             ),
             experiment.ExperimentConfig(
                 dataset="non_uniform",
                 algorithm="retinex",
-                algorithm_params={**default_filters, "sigma": 80},
+                algorithm_params={
+                    **default_filters,
+                    "sigma": 80,
+                    "use_log_scale": False,
+                },
+            ),
+            experiment.ExperimentConfig(
+                dataset="non_uniform",
+                algorithm="retinex",
+                algorithm_params={
+                    **default_filters,
+                    "sigma": 80,
+                    "use_log_scale": True,
+                },
             ),
         ]
         results = experiment.run_batch_experiments(configs)
-        experiment.save_results(results, "comparison_2026_01_20.json")
+        experiment.save_results(results, "comparison_log_or_exp.json")
 
     # Option 4: Visualize datasets
     if False:

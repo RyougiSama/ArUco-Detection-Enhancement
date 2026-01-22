@@ -6,6 +6,15 @@ from cv2.typing import MatLike
 
 
 def single_scale_retinex(img: MatLike, sigma: float = 80) -> MatLike:
+    """Single Scale Retinex (SSR) algorithm.
+
+    Args:
+        img (MatLike): input image
+        sigma (float, optional): Gaussian blur sigma. Defaults to 80.
+
+    Returns:
+        MatLike: Retinex processed image in log scale and float32 format.
+    """
     log_img = np.log1p(img.astype(np.float32))
 
     blurred = cv2.GaussianBlur(img, (0, 0), sigma)
@@ -20,6 +29,16 @@ def multi_scale_retinex(
     sigmas: Sequence[int] = [15, 80, 250],
     weights: Sequence[float] = [1 / 3, 1 / 3, 1 / 3],
 ) -> MatLike:
+    """Multi Scale Retinex (MSR) algorithm.
+
+    Args:
+        img (MatLike): input image
+        sigmas (Sequence[int], optional): Gaussian blur sigmas for different scales. Defaults to [15, 80, 250].
+        weights (Sequence[float], optional): Weights for each scale. Defaults to [1 / 3, 1 / 3, 1 / 3].
+
+    Returns:
+        MatLike: Retinex processed image in log scale and float32 format.
+    """
     assert sum(weights) - 1.0 < 1e-6, "Weights must sum to 1."
 
     msr = np.zeros_like(img, dtype=np.float32)

@@ -122,7 +122,7 @@ def run_batch_experiments(
         result = run_single_experiment(cfg, print_failures=print_failures)
         results.append(result)
         print(
-            f"  → Success: {result.success_rate:.1f}% ({result.success_count}/{result.total_count}), "
+            f"  Success: {result.success_rate:.1f}% ({result.success_count}/{result.total_count}), "
             f"Time: {result.processing_time:.2f}s"
         )
 
@@ -253,35 +253,197 @@ def display_evaluation_results() -> dict[str, dict[str, dict[str, float]]]:
     return results
 
 
-def plot_evaluation_results(save: bool = False) -> None:
-    """Run comprehensive evaluation and plot results."""
+def plot_results(save: bool = False) -> None:
+    """Run evaluation and plot results."""
     results = display_evaluation_results()
     visualizer.plot_evaluation_results(results, save=save)
-
-
-def plot_performance_comparison(save: bool = False) -> None:
-    """Run comprehensive evaluation and plot performance comparison."""
-    results = display_evaluation_results()
     visualizer.plot_performance_comparison(results, save=save)
 
 
 def visulize_test() -> None:
     """Visualize algorithm comparison on a single image."""
-    img_path = IMAGES_DIR / "experiment" / "low_light" / "img_0_dark_lv0.png"
+    img_path = IMAGES_DIR / "experiment" / "low_light" / "img_0_dark_lv3.png"
     img = cv2.imread(str(img_path), cv2.IMREAD_GRAYSCALE)
     assert img is not None
 
-    retinex_algo = algorithms.get_algorithm(
+    retinex_algo_log = algorithms.get_algorithm(
         "retinex",
         use_gaussian_prefilter=True,
         use_median_postfilter=True,
+        use_log_scale=True,
     )
-    retinex_img = retinex_algo(img)
+    retinex_img_log = retinex_algo_log(img)
+
+    retinex_algo_linear = algorithms.get_algorithm(
+        "retinex",
+        use_gaussian_prefilter=True,
+        use_median_postfilter=True,
+        use_log_scale=False,
+    )
+    retinex_img_linear = retinex_algo_linear(img)
 
     cv2.imshow("Original Image", img)
-    cv2.imshow("Retinex Image", retinex_img)
+    cv2.imshow("Retinex Image (Log Scale)", retinex_img_log)
+    cv2.imshow("Retinex Image (Linear Scale)", retinex_img_linear)
     cv2.waitKey(0)
     cv2.destroyAllWindows()
+
+
+def visualize_log_scale_comparison(
+    filename: str = "comparison_log_or_exp.json", save: bool = False
+) -> None:
+    """Visualize comparison between log scale and linear scale Retinex.
+
+    Args:
+        filename: JSON file containing comparison results
+    """
+    import matplotlib.pyplot as plt
+
+    results = load_results(filename)
+
+    # Organize data by dataset and log_scale parameter
+    data = {}
+    for r in results:
+        dataset = r["dataset"]
+        use_log = r["algorithm_params"].get("use_log_scale", False)
+        scale_type = "Log Scale" if use_log else "Linear Scale"
+
+        if dataset not in data:
+            data[dataset] = {}
+        data[dataset][scale_type] = {
+            "success_rate": r["success_rate"],
+            "processing_time": r["processing_time"],
+        }
+
+    # Plot comparison
+    fig, (ax1, ax2) = plt.subplots(1, 2, figsize=(14, 6))
+
+    datasets = list(data.keys())
+    scale_types = ["Linear Scale", "Log Scale"]
+
+    # Success rate comparison
+    x = range(len(datasets))
+    width = 0.35
+
+    linear_rates = [
+        data[ds].get("Linear Scale", {}).get("success_rate", 0) for ds in datasets
+    ]
+    log_rates = [
+        data[ds].get("Log Scale", {}).get("success_rate", 0) for ds in datasets
+    ]
+
+    bars1 = ax1.bar(
+        [i - width / 2 for i in x],
+        linear_rates,
+        width,
+        label="Linear Scale",
+        color="#3498db",
+        alpha=0.8,
+    )
+    bars2 = ax1.bar(
+        [i + width / 2 for i in x],
+        log_rates,
+        width,
+        label="Log Scale",
+        color="#e74c3c",
+        alpha=0.8,
+    )
+
+    # Add value labels
+    for bars in [bars1, bars2]:
+        for bar in bars:
+            height = bar.get_height()
+            ax1.text(
+                bar.get_x() + bar.get_width() / 2.0,
+                height,
+                f"{height:.1f}%",
+                ha="center",
+                va="bottom",
+                fontsize=10,
+            )
+
+    ax1.set_xlabel("Dataset", fontsize=12, fontweight="bold")
+    ax1.set_ylabel("Detection Success Rate (%)", fontsize=12, fontweight="bold")
+    ax1.set_title("Retinex: Log Scale vs Linear Scale", fontsize=14, fontweight="bold")
+    ax1.set_xticks(x)
+    ax1.set_xticklabels([ds.replace("_", " ").title() for ds in datasets])
+    ax1.set_ylim(0, 110)
+    ax1.legend()
+    ax1.grid(axis="y", alpha=0.3, linestyle="--")
+
+    # Processing time comparison
+    linear_times = [
+        data[ds].get("Linear Scale", {}).get("processing_time", 0) for ds in datasets
+    ]
+    log_times = [
+        data[ds].get("Log Scale", {}).get("processing_time", 0) for ds in datasets
+    ]
+
+    bars1 = ax2.bar(
+        [i - width / 2 for i in x],
+        linear_times,
+        width,
+        label="Linear Scale",
+        color="#3498db",
+        alpha=0.8,
+    )
+    bars2 = ax2.bar(
+        [i + width / 2 for i in x],
+        log_times,
+        width,
+        label="Log Scale",
+        color="#e74c3c",
+        alpha=0.8,
+    )
+
+    # Add value labels
+    for bars in [bars1, bars2]:
+        for bar in bars:
+            height = bar.get_height()
+            ax2.text(
+                bar.get_x() + bar.get_width() / 2.0,
+                height,
+                f"{height:.2f}s",
+                ha="center",
+                va="bottom",
+                fontsize=9,
+            )
+
+    ax2.set_xlabel("Dataset", fontsize=12, fontweight="bold")
+    ax2.set_ylabel("Processing Time (seconds)", fontsize=12, fontweight="bold")
+    ax2.set_title("Processing Time Comparison", fontsize=14, fontweight="bold")
+    ax2.set_xticks(x)
+    ax2.set_xticklabels([ds.replace("_", " ").title() for ds in datasets])
+    ax2.legend()
+    ax2.grid(axis="y", alpha=0.3, linestyle="--")
+
+    plt.tight_layout()
+
+    # Print summary
+    print("\n" + "=" * 60)
+    print("Retinex Algorithm: Log Scale vs Linear Scale Comparison")
+    print("=" * 60)
+    for dataset in datasets:
+        print(f"\n{dataset.replace('_', ' ').title()}:")
+        for scale_type in scale_types:
+            if scale_type in data[dataset]:
+                info = data[dataset][scale_type]
+                print(f"  {scale_type}:")
+                print(f"    Success Rate: {info['success_rate']:.2f}%")
+                print(f"    Processing Time: {info['processing_time']:.3f}s")
+    print("=" * 60 + "\n")
+
+    if save:
+        save_path = (
+            IMAGES_DIR
+            / "experiment"
+            / "display_data"
+            / "retinex_log_vs_linear_comparison.pdf"
+        )
+        plt.savefig(save_path, dpi=300)
+        print(f"Plot saved as {save_path}")
+    else:
+        plt.show()
 
 
 def run_experiment() -> None:
@@ -290,42 +452,10 @@ def run_experiment() -> None:
     # visualizer.draw_non_uniform_imgs(save=True)
     # test_raw_dataset()
 
-    # Example: Run simple experiment
-    # config = ExperimentConfig(
-    #     dataset="low_light",
-    #     algorithm="retinex",
-    #     algorithm_params={
-    #         "use_gaussian_prefilter": True,
-    #         "use_median_postfilter": True,
-    #         "sigma": 80,
-    #     },
-    # )
-    # result = run_single_experiment(config, print_failures=True)
-    # print(f"\nFinal success rate: {result.success_rate:.1f}%")
-
-    # Example: Batch experiments
-    # configs = [
-    #     ExperimentConfig(
-    #         dataset="low_light",
-    #         algorithm="none",
-    #         algorithm_params={"use_gaussian_prefilter": True, "use_median_postfilter": True},
-    #     ),
-    #     ExperimentConfig(
-    #         dataset="low_light",
-    #         algorithm="clahe",
-    #         algorithm_params={"use_gaussian_prefilter": True, "use_median_postfilter": True, "clip_limit": 2.0},
-    #     ),
-    #     ExperimentConfig(
-    #         dataset="low_light",
-    #         algorithm="retinex",
-    #         algorithm_params={"use_gaussian_prefilter": True, "use_median_postfilter": True, "sigma": 80},
-    #     ),
-    # ]
-    # results = run_batch_experiments(configs)
-    # save_results(results, "experiment_results.json")
-
     # Comprehensive evaluation with plots
-    plot_evaluation_results(save=False)
-    plot_performance_comparison(save=False)
+    # plot_results(save=False)
 
     # visulize_test()
+
+    # Visualize log scale comparison from saved results
+    visualize_log_scale_comparison("comparison_log_or_exp.json", save=True)
