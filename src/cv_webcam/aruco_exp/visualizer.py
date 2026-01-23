@@ -1,5 +1,6 @@
 """Visualization tools for experiment results."""
 
+import json
 from pathlib import Path
 
 import cv2
@@ -7,7 +8,7 @@ import matplotlib.pyplot as plt
 import numpy as np
 from cv2.typing import MatLike
 
-from cv_webcam import IMAGES_DIR
+from cv_webcam import DATA_DIR, IMAGES_DIR
 
 
 def draw_low_light_imgs(save: bool = False) -> None:
@@ -395,5 +396,468 @@ def plot_performance_comparison(
         )
         plt.savefig(save_path, bbox_inches="tight", dpi=300, format="pdf")
         print(f"✓ Performance plot saved to: {save_path}")
+    else:
+        plt.show()
+
+
+def visualize_sigma_comparison(
+    filename: str = "sigma_comparison.json",
+    save: bool = False,
+) -> None:
+    """Visualize sigma parameter sweep results with dual-axis line plot.
+
+    Args:
+        filename: JSON file containing sigma comparison results
+        save: If True, save plot to PDF. If False, display interactively.
+    """
+    from pathlib import Path
+
+    # Load results
+    load_path = Path(filename)
+    if not load_path.is_absolute():
+        load_path = DATA_DIR / "experiment" / filename
+
+    with open(load_path) as f:
+        results = json.load(f)
+
+    # Organize data by dataset and sigma
+    data = {}
+    for r in results:
+        dataset = r["dataset"]
+        sigma = r["algorithm_params"]["sigma"]
+
+        if dataset not in data:
+            data[dataset] = {"sigmas": [], "success_rates": [], "times": []}
+
+        data[dataset]["sigmas"].append(sigma)
+        data[dataset]["success_rates"].append(r["success_rate"])
+        data[dataset]["times"].append(r["processing_time"])
+
+    # Create dual-axis plot
+    fig, ax1 = plt.subplots(figsize=(12, 7))
+
+    # Define colors for datasets
+    colors = {
+        "low_light": {"success": "#2E86AB", "time": "#D81159"},
+        "non_uniform": {"success": "#06A77D", "time": "#8F2D56"},
+    }
+
+    markers = {"low_light": "o", "non_uniform": "s"}
+
+    # Plot success rates on left y-axis
+    for dataset, color_set in colors.items():
+        if dataset in data:
+            ax1.plot(
+                data[dataset]["sigmas"],
+                data[dataset]["success_rates"],
+                color=color_set["success"],
+                marker=markers[dataset],
+                markersize=8,
+                linewidth=2.5,
+                label=f"{dataset.replace('_', ' ').title()} - Success Rate",
+                alpha=0.9,
+            )
+
+            # Add value labels with staggered positioning
+            # Use different vertical offsets for different datasets to avoid overlap
+            y_offset = 15 if dataset == "low_light" else 25
+            for x, y in zip(data[dataset]["sigmas"], data[dataset]["success_rates"]):
+                ax1.annotate(
+                    f"{y:.1f}%",
+                    xy=(x, y),
+                    xytext=(0, y_offset),
+                    textcoords="offset points",
+                    ha="center",
+                    fontsize=8,
+                    color=color_set["success"],
+                    fontweight="bold",
+                    bbox=dict(
+                        boxstyle="round,pad=0.3",
+                        facecolor="white",
+                        alpha=0.7,
+                        edgecolor="none",
+                    ),
+                )
+
+    ax1.set_xlabel("Sigma (σ)", fontsize=13, fontweight="bold")
+    ax1.set_ylabel(
+        "Detection Success Rate (%)", fontsize=13, fontweight="bold", color="#2E86AB"
+    )
+    ax1.tick_params(axis="y", labelcolor="#2E86AB", labelsize=11)
+    ax1.tick_params(axis="x", labelsize=11)
+    ax1.set_ylim(0, 110)
+    ax1.grid(True, alpha=0.3, linestyle="--", linewidth=0.8)
+
+    # Create second y-axis for processing time
+    ax2 = ax1.twinx()
+
+    for dataset, color_set in colors.items():
+        if dataset in data:
+            ax2.plot(
+                data[dataset]["sigmas"],
+                data[dataset]["times"],
+                color=color_set["time"],
+                marker=markers[dataset],
+                markersize=8,
+                linewidth=2.5,
+                linestyle="--",
+                label=f"{dataset.replace('_', ' ').title()} - Processing Time",
+                alpha=0.9,
+            )
+
+            # Add value labels with staggered positioning
+            # Use different vertical offsets for different datasets to avoid overlap
+            y_offset = -20 if dataset == "low_light" else -30
+            for x, y in zip(data[dataset]["sigmas"], data[dataset]["times"]):
+                ax2.annotate(
+                    f"{y:.2f}s",
+                    xy=(x, y),
+                    xytext=(0, y_offset),
+                    textcoords="offset points",
+                    ha="center",
+                    fontsize=8,
+                    color=color_set["time"],
+                    fontweight="bold",
+                    bbox=dict(
+                        boxstyle="round,pad=0.3",
+                        facecolor="white",
+                        alpha=0.7,
+                        edgecolor="none",
+                    ),
+                )
+
+    ax2.set_ylabel(
+        "Processing Time (seconds)", fontsize=13, fontweight="bold", color="#D81159"
+    )
+    ax2.tick_params(axis="y", labelcolor="#D81159", labelsize=11)
+
+    # Set title
+    fig.suptitle(
+        "Retinex Sigma Parameter Analysis: Success Rate vs Processing Time",
+        fontsize=15,
+        fontweight="bold",
+        y=0.98,
+    )
+
+    # Combine legends
+    lines1, labels1 = ax1.get_legend_handles_labels()
+    lines2, labels2 = ax2.get_legend_handles_labels()
+    ax1.legend(
+        lines1 + lines2,
+        labels1 + labels2,
+        loc="upper left",
+        fontsize=10,
+        framealpha=0.95,
+        edgecolor="gray",
+    )
+
+    plt.tight_layout()
+
+    if save:
+        save_path = IMAGES_DIR / "experiment" / "display_data" / "sigma_comparison.pdf"
+        plt.savefig(save_path, dpi=300, bbox_inches="tight")
+        print(f"\n✓ Sigma comparison plot saved to: {save_path}")
+    else:
+        plt.show()
+
+
+def visualize_log_scale_comparison(
+    filename: str = "comparison_log_or_exp.json", save: bool = False
+) -> None:
+    """Visualize comparison between log scale and linear scale Retinex.
+
+    Args:
+        filename: JSON file containing comparison results
+        save: If True, save plot to PDF. If False, display interactively.
+    """
+    from pathlib import Path
+
+    # Load results
+    load_path = Path(filename)
+    if not load_path.is_absolute():
+        load_path = DATA_DIR / filename
+
+    with open(load_path, encoding="utf-8") as f:
+        results = json.load(f)
+
+    # Organize data by dataset and log_scale parameter
+    data = {}
+    for r in results:
+        dataset = r["dataset"]
+        use_log = r["algorithm_params"].get("use_log_scale", False)
+        scale_type = "Log Scale" if use_log else "Linear Scale"
+
+        if dataset not in data:
+            data[dataset] = {}
+        data[dataset][scale_type] = {
+            "success_rate": r["success_rate"],
+            "processing_time": r["processing_time"],
+        }
+
+    # Plot comparison
+    fig, (ax1, ax2) = plt.subplots(1, 2, figsize=(14, 6))
+
+    datasets = list(data.keys())
+    scale_types = ["Linear Scale", "Log Scale"]
+
+    # Success rate comparison
+    x = range(len(datasets))
+    width = 0.35
+
+    linear_rates = [
+        data[ds].get("Linear Scale", {}).get("success_rate", 0) for ds in datasets
+    ]
+    log_rates = [
+        data[ds].get("Log Scale", {}).get("success_rate", 0) for ds in datasets
+    ]
+
+    bars1 = ax1.bar(
+        [i - width / 2 for i in x],
+        linear_rates,
+        width,
+        label="Linear Scale",
+        color="#3498db",
+        alpha=0.8,
+    )
+    bars2 = ax1.bar(
+        [i + width / 2 for i in x],
+        log_rates,
+        width,
+        label="Log Scale",
+        color="#e74c3c",
+        alpha=0.8,
+    )
+
+    # Add value labels
+    for bars in [bars1, bars2]:
+        for bar in bars:
+            height = bar.get_height()
+            ax1.text(
+                bar.get_x() + bar.get_width() / 2.0,
+                height,
+                f"{height:.1f}%",
+                ha="center",
+                va="bottom",
+                fontsize=10,
+            )
+
+    ax1.set_xlabel("Dataset", fontsize=12, fontweight="bold")
+    ax1.set_ylabel("Detection Success Rate (%)", fontsize=12, fontweight="bold")
+    ax1.set_title("Retinex: Log Scale vs Linear Scale", fontsize=14, fontweight="bold")
+    ax1.set_xticks(x)
+    ax1.set_xticklabels([ds.replace("_", " ").title() for ds in datasets])
+    ax1.set_ylim(0, 110)
+    ax1.legend()
+    ax1.grid(axis="y", alpha=0.3, linestyle="--")
+
+    # Processing time comparison
+    linear_times = [
+        data[ds].get("Linear Scale", {}).get("processing_time", 0) for ds in datasets
+    ]
+    log_times = [
+        data[ds].get("Log Scale", {}).get("processing_time", 0) for ds in datasets
+    ]
+
+    bars1 = ax2.bar(
+        [i - width / 2 for i in x],
+        linear_times,
+        width,
+        label="Linear Scale",
+        color="#3498db",
+        alpha=0.8,
+    )
+    bars2 = ax2.bar(
+        [i + width / 2 for i in x],
+        log_times,
+        width,
+        label="Log Scale",
+        color="#e74c3c",
+        alpha=0.8,
+    )
+
+    # Add value labels
+    for bars in [bars1, bars2]:
+        for bar in bars:
+            height = bar.get_height()
+            ax2.text(
+                bar.get_x() + bar.get_width() / 2.0,
+                height,
+                f"{height:.2f}s",
+                ha="center",
+                va="bottom",
+                fontsize=9,
+            )
+
+    ax2.set_xlabel("Dataset", fontsize=12, fontweight="bold")
+    ax2.set_ylabel("Processing Time (seconds)", fontsize=12, fontweight="bold")
+    ax2.set_title("Processing Time Comparison", fontsize=14, fontweight="bold")
+    ax2.set_xticks(x)
+    ax2.set_xticklabels([ds.replace("_", " ").title() for ds in datasets])
+    ax2.legend()
+    ax2.grid(axis="y", alpha=0.3, linestyle="--")
+
+    plt.tight_layout()
+
+    # Print summary
+    print("\n" + "=" * 60)
+    print("Retinex Algorithm: Log Scale vs Linear Scale Comparison")
+    print("=" * 60)
+    for dataset in datasets:
+        print(f"\n{dataset.replace('_', ' ').title()}:")
+        for scale_type in scale_types:
+            if scale_type in data[dataset]:
+                info = data[dataset][scale_type]
+                print(f"  {scale_type}:")
+                print(f"    Success Rate: {info['success_rate']:.2f}%")
+                print(f"    Processing Time: {info['processing_time']:.3f}s")
+    print("=" * 60 + "\n")
+
+    if save:
+        save_path = (
+            IMAGES_DIR
+            / "experiment"
+            / "display_data"
+            / "retinex_log_vs_linear_comparison.pdf"
+        )
+        plt.savefig(save_path, dpi=300)
+        print(f"Plot saved as {save_path}")
+    else:
+        plt.show()
+
+
+def visualize_prefilter_comparison(
+    filename: str = "prefilter_comparison.json",
+    save: bool = False,
+) -> None:
+    """Visualize comparison of different prefilters.
+
+    Args:
+        filename: JSON file containing comparison results
+        save: If True, save plot to PDF. If False, display interactively.
+    """
+    from pathlib import Path
+
+    # Load results
+    load_path = Path(filename)
+    if not load_path.is_absolute():
+        load_path = DATA_DIR / filename
+
+    with open(load_path, encoding="utf-8") as f:
+        results = json.load(f)
+
+    # Organize data by prefilter and dataset
+    data = {}
+    for r in results:
+        prefilter = r["algorithm_params"].get("prefilter", "none")
+        dataset = r["dataset"]
+
+        if prefilter not in data:
+            data[prefilter] = {}
+
+        data[prefilter][dataset] = {
+            "success_rate": r["success_rate"],
+            "processing_time": r["processing_time"],
+        }
+
+    # Create visualization
+    fig, (ax1, ax2) = plt.subplots(1, 2, figsize=(14, 6))
+
+    prefilters = list(data.keys())
+    datasets = ["low_light", "non_uniform"]
+
+    x = range(len(datasets))
+    width = 0.35
+
+    # Different color schemes for different metrics
+    # Success rate: cool tones (blues and greens) - representing accuracy
+    success_colors = ["#2E86AB", "#06A77D", "#6A4C93", "#E63946", "#F77F00"]
+    # Processing time: warm tones (oranges and purples) - representing performance
+    time_colors = ["#D81159", "#8F2D56", "#FF6B35", "#F4A261", "#E76F51"]
+
+    # Success rate comparison
+    for idx, prefilter in enumerate(prefilters):
+        rates = [data[prefilter].get(ds, {}).get("success_rate", 0) for ds in datasets]
+        offset = (idx - len(prefilters) / 2 + 0.5) * width
+        bars = ax1.bar(
+            [i + offset for i in x],
+            rates,
+            width,
+            label=prefilter.title(),
+            color=success_colors[idx % len(success_colors)],
+            alpha=0.85,
+            edgecolor="white",
+            linewidth=1.5,
+        )
+
+        # Add value labels
+        for bar in bars:
+            height = bar.get_height()
+            ax1.text(
+                bar.get_x() + bar.get_width() / 2.0,
+                height,
+                f"{height:.1f}%",
+                ha="center",
+                va="bottom",
+                fontsize=10,
+                fontweight="bold",
+            )
+
+    ax1.set_xlabel("Dataset", fontsize=12, fontweight="bold")
+    ax1.set_ylabel("Detection Success Rate (%)", fontsize=12, fontweight="bold")
+    ax1.set_title("Prefilter Comparison: Success Rate", fontsize=14, fontweight="bold")
+    ax1.set_xticks(x)
+    ax1.set_xticklabels([ds.replace("_", " ").title() for ds in datasets])
+    ax1.set_ylim(0, 110)
+    ax1.legend(framealpha=0.9, edgecolor="gray")
+    ax1.grid(axis="y", alpha=0.3, linestyle="--")
+
+    # Processing time comparison
+    for idx, prefilter in enumerate(prefilters):
+        times = [
+            data[prefilter].get(ds, {}).get("processing_time", 0) for ds in datasets
+        ]
+        offset = (idx - len(prefilters) / 2 + 0.5) * width
+        bars = ax2.bar(
+            [i + offset for i in x],
+            times,
+            width,
+            label=prefilter.title(),
+            color=time_colors[idx % len(time_colors)],
+            alpha=0.85,
+            edgecolor="white",
+            linewidth=1.5,
+        )
+
+        # Add value labels
+        for bar in bars:
+            height = bar.get_height()
+            ax2.text(
+                bar.get_x() + bar.get_width() / 2.0,
+                height,
+                f"{height:.2f}s",
+                ha="center",
+                va="bottom",
+                fontsize=10,
+                fontweight="bold",
+            )
+
+    ax2.set_xlabel("Dataset", fontsize=12, fontweight="bold")
+    ax2.set_ylabel("Processing Time (seconds)", fontsize=12, fontweight="bold")
+    ax2.set_title(
+        "Prefilter Comparison: Processing Time", fontsize=14, fontweight="bold"
+    )
+    ax2.set_xticks(x)
+    ax2.set_xticklabels([ds.replace("_", " ").title() for ds in datasets])
+    ax2.legend(framealpha=0.9, edgecolor="gray")
+    ax2.grid(axis="y", alpha=0.3, linestyle="--")
+
+    plt.tight_layout()
+
+    if save:
+        save_path = (
+            IMAGES_DIR / "experiment" / "display_data" / "prefilter_comparison.pdf"
+        )
+        plt.savefig(save_path, dpi=300, bbox_inches="tight")
+        print(f"\n✓ Plot saved to: {save_path}")
     else:
         plt.show()

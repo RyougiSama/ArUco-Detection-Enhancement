@@ -266,184 +266,213 @@ def visulize_test() -> None:
     img = cv2.imread(str(img_path), cv2.IMREAD_GRAYSCALE)
     assert img is not None
 
-    retinex_algo_log = algorithms.get_algorithm(
-        "retinex",
-        use_gaussian_prefilter=True,
-        use_median_postfilter=True,
-        use_log_scale=True,
-    )
-    retinex_img_log = retinex_algo_log(img)
+    if False:
+        retinex_1 = algorithms.get_algorithm(
+            "retinex",
+            sigma=80,
+            prefilter="gaussian",
+            prefilter_params={"ksize": (5, 5)},
+        )
+        retinex_img_1 = retinex_1(img)
 
-    retinex_algo_linear = algorithms.get_algorithm(
-        "retinex",
-        use_gaussian_prefilter=True,
-        use_median_postfilter=True,
-        use_log_scale=False,
-    )
-    retinex_img_linear = retinex_algo_linear(img)
+        retinex_2 = algorithms.get_algorithm(
+            "retinex",
+            sigma=80,
+            prefilter="gaussian",
+            prefilter_params={"ksize": (5, 5)},
+            postfilter="bilateral",
+            postfilter_params={"d": 9, "sigmaColor": 75, "sigmaSpace": 75},
+        )
+        retinex_img_2 = retinex_2(img)
 
-    cv2.imshow("Original Image", img)
-    cv2.imshow("Retinex Image (Log Scale)", retinex_img_log)
-    cv2.imshow("Retinex Image (Linear Scale)", retinex_img_linear)
-    cv2.waitKey(0)
-    cv2.destroyAllWindows()
+        retinex_img_3 = cv2.Canny(img, 150, 200)
+
+        # cv2.imshow("Original Image", img)
+        cv2.imshow("Retinex Image 1", retinex_img_1)
+        cv2.imshow("Retinex Image 2", retinex_img_2)
+        cv2.imshow("Retinex Image 3", retinex_img_3)
+        cv2.waitKey(0)
+        cv2.destroyAllWindows()
+    if True:
+        from .analysis import show_retinex_distribution
+
+        show_retinex_distribution(img)
 
 
-def visualize_log_scale_comparison(
-    filename: str = "comparison_log_or_exp.json", save: bool = False
-) -> None:
-    """Visualize comparison between log scale and linear scale Retinex.
+def compare_prefilters(
+    prefilters: dict[str, dict],
+    algorithm: str = "retinex",
+    postfilter: str = "median",
+    algorithm_params: dict | None = None,
+    datasets: list[Literal["low_light", "non_uniform"]] | None = None,
+    filename: str = "prefilter_comparison.json",
+) -> list[ExperimentResult]:
+    """Compare different prefilter types for an algorithm.
 
     Args:
-        filename: JSON file containing comparison results
+        prefilters: Dict of {filter_name: filter_params}
+            e.g., {"Gaussian": {"filter": "gaussian"}, "Bilateral": {"filter": "bilateral", "params": {...}}}
+        algorithm: Algorithm to test (default: "retinex")
+        postfilter: Postfilter to use for all tests (default: "median")
+        algorithm_params: Additional algorithm parameters (e.g., sigma, use_log_scale)
+        datasets: List of datasets to test (default: ["low_light", "non_uniform"])
+        filename: JSON filename to save results
+
+    Returns:
+        List of experiment results
     """
-    import matplotlib.pyplot as plt
+    if datasets is None:
+        datasets = ["low_light", "non_uniform"]
 
-    results = load_results(filename)
+    if algorithm_params is None:
+        algorithm_params = {}
 
-    # Organize data by dataset and log_scale parameter
-    data = {}
-    for r in results:
-        dataset = r["dataset"]
-        use_log = r["algorithm_params"].get("use_log_scale", False)
-        scale_type = "Log Scale" if use_log else "Linear Scale"
+    configs = []
 
-        if dataset not in data:
-            data[dataset] = {}
-        data[dataset][scale_type] = {
-            "success_rate": r["success_rate"],
-            "processing_time": r["processing_time"],
-        }
+    for filter_name, filter_config in prefilters.items():
+        for dataset in datasets:
+            params = {
+                "postfilter": postfilter,
+                **algorithm_params,
+            }
 
-    # Plot comparison
-    fig, (ax1, ax2) = plt.subplots(1, 2, figsize=(14, 6))
+            # Handle prefilter configuration
+            if "filter" in filter_config:
+                params["prefilter"] = filter_config["filter"]
 
-    datasets = list(data.keys())
-    scale_types = ["Linear Scale", "Log Scale"]
+            if "params" in filter_config:
+                params["prefilter_params"] = filter_config["params"]
 
-    # Success rate comparison
-    x = range(len(datasets))
-    width = 0.35
-
-    linear_rates = [
-        data[ds].get("Linear Scale", {}).get("success_rate", 0) for ds in datasets
-    ]
-    log_rates = [
-        data[ds].get("Log Scale", {}).get("success_rate", 0) for ds in datasets
-    ]
-
-    bars1 = ax1.bar(
-        [i - width / 2 for i in x],
-        linear_rates,
-        width,
-        label="Linear Scale",
-        color="#3498db",
-        alpha=0.8,
-    )
-    bars2 = ax1.bar(
-        [i + width / 2 for i in x],
-        log_rates,
-        width,
-        label="Log Scale",
-        color="#e74c3c",
-        alpha=0.8,
-    )
-
-    # Add value labels
-    for bars in [bars1, bars2]:
-        for bar in bars:
-            height = bar.get_height()
-            ax1.text(
-                bar.get_x() + bar.get_width() / 2.0,
-                height,
-                f"{height:.1f}%",
-                ha="center",
-                va="bottom",
-                fontsize=10,
+            configs.append(
+                ExperimentConfig(
+                    dataset=dataset,
+                    algorithm=algorithm,
+                    algorithm_params=params,
+                )
             )
 
-    ax1.set_xlabel("Dataset", fontsize=12, fontweight="bold")
-    ax1.set_ylabel("Detection Success Rate (%)", fontsize=12, fontweight="bold")
-    ax1.set_title("Retinex: Log Scale vs Linear Scale", fontsize=14, fontweight="bold")
-    ax1.set_xticks(x)
-    ax1.set_xticklabels([ds.replace("_", " ").title() for ds in datasets])
-    ax1.set_ylim(0, 110)
-    ax1.legend()
-    ax1.grid(axis="y", alpha=0.3, linestyle="--")
+    print("\n" + "=" * 70)
+    print(f"Comparing Prefilters: {', '.join(prefilters.keys())}")
+    print(f"Algorithm: {algorithm.upper()}, Postfilter: {postfilter}")
+    print("=" * 70)
 
-    # Processing time comparison
-    linear_times = [
-        data[ds].get("Linear Scale", {}).get("processing_time", 0) for ds in datasets
-    ]
-    log_times = [
-        data[ds].get("Log Scale", {}).get("processing_time", 0) for ds in datasets
-    ]
-
-    bars1 = ax2.bar(
-        [i - width / 2 for i in x],
-        linear_times,
-        width,
-        label="Linear Scale",
-        color="#3498db",
-        alpha=0.8,
-    )
-    bars2 = ax2.bar(
-        [i + width / 2 for i in x],
-        log_times,
-        width,
-        label="Log Scale",
-        color="#e74c3c",
-        alpha=0.8,
-    )
-
-    # Add value labels
-    for bars in [bars1, bars2]:
-        for bar in bars:
-            height = bar.get_height()
-            ax2.text(
-                bar.get_x() + bar.get_width() / 2.0,
-                height,
-                f"{height:.2f}s",
-                ha="center",
-                va="bottom",
-                fontsize=9,
-            )
-
-    ax2.set_xlabel("Dataset", fontsize=12, fontweight="bold")
-    ax2.set_ylabel("Processing Time (seconds)", fontsize=12, fontweight="bold")
-    ax2.set_title("Processing Time Comparison", fontsize=14, fontweight="bold")
-    ax2.set_xticks(x)
-    ax2.set_xticklabels([ds.replace("_", " ").title() for ds in datasets])
-    ax2.legend()
-    ax2.grid(axis="y", alpha=0.3, linestyle="--")
-
-    plt.tight_layout()
+    results = run_batch_experiments(configs)
+    save_results(results, filename)
 
     # Print summary
-    print("\n" + "=" * 60)
-    print("Retinex Algorithm: Log Scale vs Linear Scale Comparison")
-    print("=" * 60)
-    for dataset in datasets:
-        print(f"\n{dataset.replace('_', ' ').title()}:")
-        for scale_type in scale_types:
-            if scale_type in data[dataset]:
-                info = data[dataset][scale_type]
-                print(f"  {scale_type}:")
-                print(f"    Success Rate: {info['success_rate']:.2f}%")
-                print(f"    Processing Time: {info['processing_time']:.3f}s")
-    print("=" * 60 + "\n")
+    print("\n" + "=" * 70)
+    print("Summary:")
+    print("=" * 70)
 
-    if save:
-        save_path = (
-            IMAGES_DIR
-            / "experiment"
-            / "display_data"
-            / "retinex_log_vs_linear_comparison.pdf"
+    num_datasets = len(datasets)
+    filter_names = list(prefilters.keys())
+
+    for idx, filter_name in enumerate(filter_names):
+        print(f"\n{filter_name} Prefilter:")
+        for ds_idx, dataset in enumerate(datasets):
+            result = results[idx * num_datasets + ds_idx]
+            dataset_display = dataset.replace("_", " ").title()
+            print(f"  {dataset_display} Dataset:")
+            print(f"    Success Rate: {result.success_rate:.2f}%")
+            print(f"    Processing Time: {result.processing_time:.3f}s")
+
+    print("=" * 70 + "\n")
+
+    return results
+
+
+def compare_sigma_values(
+    sigmas: list[float] | None = None,
+    algorithm: str = "retinex",
+    datasets: list[Literal["low_light", "non_uniform"]] | None = None,
+    use_filters: bool = False,
+    filename: str = "sigma_comparison.json",
+) -> list[ExperimentResult]:
+    """Compare different sigma values for Retinex algorithm.
+
+    Args:
+        sigmas: List of sigma values to test (default: [15, 50, 80, 120, 180, 250])
+        algorithm: Algorithm to test (default: "retinex")
+        datasets: Datasets to test (default: ["low_light", "non_uniform"])
+        use_filters: Whether to use pre/post filters (default: False)
+        filename: JSON filename to save results
+
+    Returns:
+        List of experiment results
+    """
+    if sigmas is None:
+        sigmas = [15, 50, 80, 120, 180, 250]
+
+    if datasets is None:
+        datasets = ["low_light", "non_uniform"]
+
+    configs = []
+
+    for sigma in sigmas:
+        for dataset in datasets:
+            params = {
+                "sigma": sigma,
+                "use_log_scale": False,  # Linear scale performs better
+            }
+
+            # Add filters if requested
+            if use_filters:
+                params["prefilter"] = "gaussian"
+                params["postfilter"] = "median"
+            else:
+                params["prefilter"] = None
+                params["postfilter"] = None
+
+            configs.append(
+                ExperimentConfig(
+                    dataset=dataset,
+                    algorithm=algorithm,
+                    algorithm_params=params,
+                )
+            )
+
+    print("\n" + "=" * 70)
+    print(f"Sigma Parameter Sweep: {sigmas}")
+    print(
+        f"Algorithm: {algorithm.upper()}, Filters: {'Enabled' if use_filters else 'Disabled'}"
+    )
+    print(f"Datasets: {', '.join(d.replace('_', ' ').title() for d in datasets)}")
+    print("=" * 70)
+
+    results = run_batch_experiments(configs)
+    save_results(results, filename)
+
+    # Print summary table
+    print("\n" + "=" * 70)
+    print("Summary Table:")
+    print("=" * 70)
+    print(f"{'Sigma':<10} {'Dataset':<15} {'Success Rate':<15} {'Time (s)':<10}")
+    print("-" * 70)
+
+    for result in results:
+        sigma = result.config.algorithm_params["sigma"]
+        dataset = result.config.dataset.replace("_", " ").title()
+        print(
+            f"{sigma:<10.0f} {dataset:<15} {result.success_rate:>6.2f}%         {result.processing_time:>6.3f}"
         )
-        plt.savefig(save_path, dpi=300)
-        print(f"Plot saved as {save_path}")
-    else:
-        plt.show()
+
+    print("=" * 70)
+
+    # Find best sigma for each dataset
+    print("\nBest Sigma Values:")
+    print("-" * 70)
+    for dataset in datasets:
+        dataset_results = [r for r in results if r.config.dataset == dataset]
+        best_result = max(dataset_results, key=lambda r: r.success_rate)
+        best_sigma = best_result.config.algorithm_params["sigma"]
+        print(
+            f"{dataset.replace('_', ' ').title():<15}: σ={best_sigma:<6.0f} "
+            f"(Success: {best_result.success_rate:.2f}%, Time: {best_result.processing_time:.3f}s)"
+        )
+
+    print("=" * 70 + "\n")
+
+    return results
 
 
 def run_experiment() -> None:
@@ -455,7 +484,4 @@ def run_experiment() -> None:
     # Comprehensive evaluation with plots
     # plot_results(save=False)
 
-    # visulize_test()
-
-    # Visualize log scale comparison from saved results
-    visualize_log_scale_comparison("comparison_log_or_exp.json", save=True)
+    visulize_test()

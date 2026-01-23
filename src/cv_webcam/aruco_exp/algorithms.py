@@ -137,6 +137,7 @@ class RetinexPreprocess:
         self,
         sigma: float = 80,
         use_log_scale: bool = True,
+        smart_normalize: bool = False,
         prefilter: str | None = None,
         postfilter: str | None = None,
         prefilter_params: dict | None = None,
@@ -153,6 +154,7 @@ class RetinexPreprocess:
 
         self.sigma = sigma
         self.use_log_scale = use_log_scale
+        self.smart_normalize = smart_normalize
         self.prefilter = prefilter
         self.postfilter = postfilter
         self.prefilter_params = prefilter_params or {}
@@ -166,9 +168,12 @@ class RetinexPreprocess:
         if not self.use_log_scale:
             result = np.expm1(result)
 
-        result = cv2.normalize(result, None, 0, 255, cv2.NORM_MINMAX).astype(  # type: ignore
-            "uint8"
-        )
+        if self.smart_normalize:
+            result = img_prep.gain_compensation(result).astype(np.uint8)
+        else:
+            result = cv2.normalize(result, None, 0, 255, cv2.NORM_MINMAX).astype(  # type: ignore
+                np.uint8
+            )
 
         result = apply_filter(result, self.postfilter, self.postfilter_params)
 

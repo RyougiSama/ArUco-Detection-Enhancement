@@ -70,16 +70,15 @@ def adaptive_gaussian(img: MatLike, sigma: float) -> MatLike:
     return blurred / (adapt + 1e-6)
 
 
-def gain_compensation(img: MatLike) -> MatLike:
+def gain_compensation(img: MatLike, k: float = 2.5) -> MatLike:
     mean = img.mean()
     std = img.std()
 
-    k = 2.5
     min_val = mean - k * std
     max_val = mean + k * std
 
-    result = (img - min_val) / (max_val - min_val) * 255
-    result = np.clip(result, 0, 255)
+    clipped = np.clip(img, min_val, max_val)
+    result = cv2.normalize(clipped, None, 0, 255, cv2.NORM_MINMAX)  # type: ignore
 
     return result
 

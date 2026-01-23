@@ -16,6 +16,54 @@ def test_detector(url: str) -> None:
     detector.test_detector(url)
 
 
+def test_multiple_algorithm() -> None:
+    # Default filter settings for all algorithms
+    default_filters = {
+        "use_gaussian_prefilter": True,
+        "use_median_postfilter": True,
+    }
+    configs = [
+        experiment.ExperimentConfig(
+            dataset="low_light",
+            algorithm="retinex",
+            algorithm_params={
+                **default_filters,
+                "sigma": 80,
+                "use_log_scale": False,
+            },
+        ),
+        experiment.ExperimentConfig(
+            dataset="low_light",
+            algorithm="retinex",
+            algorithm_params={
+                **default_filters,
+                "sigma": 80,
+                "use_log_scale": True,
+            },
+        ),
+        experiment.ExperimentConfig(
+            dataset="non_uniform",
+            algorithm="retinex",
+            algorithm_params={
+                **default_filters,
+                "sigma": 80,
+                "use_log_scale": False,
+            },
+        ),
+        experiment.ExperimentConfig(
+            dataset="non_uniform",
+            algorithm="retinex",
+            algorithm_params={
+                **default_filters,
+                "sigma": 80,
+                "use_log_scale": True,
+            },
+        ),
+    ]
+    results = experiment.run_batch_experiments(configs)
+    experiment.save_results(results, "comparison_log_or_exp.json")
+
+
 def main() -> None:
     """Main entry point."""
     cv_webcam.init_app()
@@ -40,51 +88,7 @@ def main() -> None:
 
     # Option 3: Compare multiple algorithms
     if False:
-        # Default filter settings for all algorithms
-        default_filters = {
-            "use_gaussian_prefilter": True,
-            "use_median_postfilter": True,
-        }
-        configs = [
-            experiment.ExperimentConfig(
-                dataset="low_light",
-                algorithm="retinex",
-                algorithm_params={
-                    **default_filters,
-                    "sigma": 80,
-                    "use_log_scale": False,
-                },
-            ),
-            experiment.ExperimentConfig(
-                dataset="low_light",
-                algorithm="retinex",
-                algorithm_params={
-                    **default_filters,
-                    "sigma": 80,
-                    "use_log_scale": True,
-                },
-            ),
-            experiment.ExperimentConfig(
-                dataset="non_uniform",
-                algorithm="retinex",
-                algorithm_params={
-                    **default_filters,
-                    "sigma": 80,
-                    "use_log_scale": False,
-                },
-            ),
-            experiment.ExperimentConfig(
-                dataset="non_uniform",
-                algorithm="retinex",
-                algorithm_params={
-                    **default_filters,
-                    "sigma": 80,
-                    "use_log_scale": True,
-                },
-            ),
-        ]
-        results = experiment.run_batch_experiments(configs)
-        experiment.save_results(results, "comparison_log_or_exp.json")
+        test_multiple_algorithm()
 
     # Option 4: Visualize datasets
     if False:
@@ -100,6 +104,47 @@ def main() -> None:
     # Option 6: Generate degraded datasets
     if False:
         dataset_generator.generate_dataset()
+
+    # Option 7: Compare Gaussian vs Bilateral prefilter with Retinex
+    if False:
+        prefilters = {
+            "Gaussian": {"filter": "gaussian"},
+            "Bilateral": {
+                "filter": "bilateral",
+                "params": {"d": 9, "sigma_color": 75, "sigma_space": 75},
+            },
+        }
+
+        experiment.compare_prefilters(
+            prefilters=prefilters,
+            algorithm="retinex",
+            postfilter="median",
+            algorithm_params={"sigma": 80, "use_log_scale": False},
+            filename="gaussian_vs_bilateral_prefilter.json",
+        )
+
+        # Visualize results
+        visualizer.visualize_prefilter_comparison(
+            filename="gaussian_vs_bilateral_prefilter.json",
+            save=True,
+        )
+
+    # Option 8: Compare different sigma values for Retinex
+    if False:
+        # experiment.compare_sigma_values(
+        #     sigmas=[15, 50, 80, 120, 180, 250],
+        #     algorithm="retinex",
+        #     use_filters=False,  # No pre/post filters
+        #     filename="sigma_comparison.json",
+        # )
+
+        # Visualize results
+        from cv_webcam.aruco_exp import visualizer
+
+        visualizer.visualize_sigma_comparison(
+            filename="sigma_comparison.json",
+            save=True,
+        )
 
 
 if __name__ == "__main__":
