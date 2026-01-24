@@ -24,6 +24,46 @@ def single_scale_retinex(img: MatLike, sigma: float = 80) -> MatLike:
     return retinex
 
 
+def ssr_with_downsample(
+    img: MatLike, sigma: float = 80, scale_factor: float = 0.5
+) -> MatLike:
+    """Single Scale Retinex (SSR) with downsampling for efficiency.
+
+    Args:
+        img (MatLike): input image
+        sigma (float, optional): Gaussian blur sigma. Defaults to 80.
+        scale_factor (float, optional): Downsampling factor. Defaults to 0.5.
+
+    Returns:
+        MatLike: Retinex processed image in log scale and float32 format.
+    """
+    if False:
+        # Downsample the image
+        small_img = cv2.resize(img, (0, 0), fx=scale_factor, fy=scale_factor)
+
+        log_small_img = np.log1p(small_img.astype(np.float32))
+
+        blurred = cv2.GaussianBlur(small_img, (0, 0), sigma * scale_factor)
+        log_blur = np.log1p(blurred.astype(np.float32))
+
+        retinex_small = log_small_img - log_blur
+
+        # Upsample back to original size
+        retinex = cv2.resize(retinex_small, (img.shape[1], img.shape[0]))
+
+    if True:
+        small_img = cv2.resize(img, (0, 0), fx=scale_factor, fy=scale_factor)
+
+        small_blurred = cv2.GaussianBlur(small_img, (0, 0), sigma * scale_factor)
+        samll_log_blur = np.log1p(small_blurred.astype(np.float32))
+
+        log_blur = cv2.resize(samll_log_blur, (img.shape[1], img.shape[0]))
+        log_img = np.log1p(img.astype(np.float32))
+        retinex = log_img - log_blur
+
+    return retinex
+
+
 def multi_scale_retinex(
     img: MatLike,
     sigmas: Sequence[int] = [15, 80, 250],
@@ -45,6 +85,34 @@ def multi_scale_retinex(
 
     for sigma, weight in zip(sigmas, weights):
         ssr = single_scale_retinex(img, sigma)
+        msr += weight * ssr
+
+    return msr
+
+
+def msr_with_downsample(
+    img: MatLike,
+    sigmas: Sequence[int] = [15, 80, 250],
+    weights: Sequence[float] = [1 / 3, 1 / 3, 1 / 3],
+    scale_factor: float = 0.5,
+) -> MatLike:
+    """Multi Scale Retinex (MSR) with downsampling for efficiency.
+
+    Args:
+        img (MatLike): input image
+        sigmas (Sequence[int], optional): Gaussian blur sigmas for different scales. Defaults to [15, 80, 250].
+        weights (Sequence[float], optional): Weights for each scale. Defaults to [1 / 3, 1 / 3, 1 / 3].
+        scale_factor (float, optional): Downsampling factor. Defaults to 0.5.
+
+    Returns:
+        MatLike: Retinex processed image in log scale and float32 format.
+    """
+    assert sum(weights) - 1.0 < 1e-6, "Weights must sum to 1."
+
+    msr = np.zeros_like(img, dtype=np.float32)
+
+    for sigma, weight in zip(sigmas, weights):
+        ssr = ssr_with_downsample(img, sigma, scale_factor)
         msr += weight * ssr
 
     return msr

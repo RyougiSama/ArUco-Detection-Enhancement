@@ -1242,6 +1242,337 @@ def visualize_postfilter_comparison(
         plt.show()
 
 
+def visualize_retinex_decomposition_comparison(
+    filename: str = "retinex_decomposition_comparison.json",
+    save: bool = False,
+) -> None:
+    """Visualize comparison between different Retinex decomposition methods.
+
+    Args:
+        filename: JSON file containing comparison results
+        save: If True, save plot to PDF. If False, display interactively.
+    """
+
+    # Load results
+    load_path = Path(filename)
+    if not load_path.is_absolute():
+        load_path = DATA_DIR / "experiment" / filename
+
+    with open(load_path, encoding="utf-8") as f:
+        results = json.load(f)
+
+    # Organize data by dataset and decomposition method
+    data = {}
+    for r in results:
+        dataset = r["dataset"]
+        method = r["algorithm_params"].get("decomposition_method", "ssr")
+
+        if dataset not in data:
+            data[dataset] = {}
+        data[dataset][method] = {
+            "success_rate": r["success_rate"],
+            "processing_time": r["processing_time"],
+        }
+
+    # Plot comparison
+    fig, (ax1, ax2) = plt.subplots(1, 2, figsize=(14, 6))
+
+    datasets = list(data.keys())
+    methods = ["ssr", "ssr_downsample", "msr_downsample"]
+    method_labels = ["SSR", "SSR Downsample", "MSR Downsample"]
+
+    # Success rate comparison
+    x = range(len(datasets))
+    width = 0.25
+
+    # Color scheme: gradient from blue to purple for different methods
+    colors = {
+        "ssr": "#2E86AB",  # Deep blue
+        "ssr_downsample": "#06A77D",  # Teal
+        "msr_downsample": "#A23B72",  # Purple
+    }
+
+    bars_list = []
+    for i, (method, label) in enumerate(zip(methods, method_labels)):
+        rates = [data[ds].get(method, {}).get("success_rate", 0) for ds in datasets]
+
+        bars = ax1.bar(
+            [pos + (i - 1) * width for pos in x],
+            rates,
+            width,
+            label=label,
+            color=colors[method],
+            alpha=0.85,
+            edgecolor="white",
+            linewidth=1.5,
+        )
+        bars_list.append(bars)
+
+        # Add value labels
+        for bar in bars:
+            height = bar.get_height()
+            ax1.text(
+                bar.get_x() + bar.get_width() / 2.0,
+                height + 1,
+                f"{height:.1f}%",
+                ha="center",
+                va="bottom",
+                fontsize=9,
+                fontweight="bold",
+            )
+
+    ax1.set_xlabel("Dataset", fontsize=12, fontweight="bold")
+    ax1.set_ylabel("Detection Success Rate (%)", fontsize=12, fontweight="bold")
+    ax1.set_title(
+        "Decomposition Method Comparison: Success Rate",
+        fontsize=14,
+        fontweight="bold",
+    )
+    ax1.set_xticks(x)
+    ax1.set_xticklabels([ds.replace("_", " ").title() for ds in datasets])
+    ax1.set_ylim(
+        0,
+        max(
+            [
+                max(data[ds].get(m, {}).get("success_rate", 0) for m in methods)
+                for ds in datasets
+            ]
+        )
+        * 1.15,
+    )
+    ax1.legend(framealpha=0.9, edgecolor="gray", fontsize=10)
+    ax1.grid(axis="y", alpha=0.3, linestyle="--")
+
+    # Processing time comparison
+    bars_list = []
+    for i, (method, label) in enumerate(zip(methods, method_labels)):
+        times = [data[ds].get(method, {}).get("processing_time", 0) for ds in datasets]
+
+        bars = ax2.bar(
+            [pos + (i - 1) * width for pos in x],
+            times,
+            width,
+            label=label,
+            color=colors[method],
+            alpha=0.85,
+            edgecolor="white",
+            linewidth=1.5,
+        )
+        bars_list.append(bars)
+
+        # Add value labels
+        for bar in bars:
+            height = bar.get_height()
+            ax2.text(
+                bar.get_x() + bar.get_width() / 2.0,
+                height + 0.2,
+                f"{height:.2f}s",
+                ha="center",
+                va="bottom",
+                fontsize=9,
+                fontweight="bold",
+            )
+
+    ax2.set_xlabel("Dataset", fontsize=12, fontweight="bold")
+    ax2.set_ylabel("Processing Time (seconds)", fontsize=12, fontweight="bold")
+    ax2.set_title(
+        "Decomposition Method Comparison: Processing Time",
+        fontsize=14,
+        fontweight="bold",
+    )
+    ax2.set_xticks(x)
+    ax2.set_xticklabels([ds.replace("_", " ").title() for ds in datasets])
+    ax2.legend(framealpha=0.9, edgecolor="gray", fontsize=10)
+    ax2.grid(axis="y", alpha=0.3, linestyle="--")
+
+    # Add overall title
+    fig.suptitle(
+        "Retinex Decomposition Methods: SSR vs SSR_Downsample vs MSR_Downsample",
+        fontsize=15,
+        fontweight="bold",
+        y=1.00,
+    )
+
+    plt.tight_layout()
+
+    if save:
+        save_path = (
+            IMAGES_DIR
+            / "experiment"
+            / "display_data"
+            / filename.replace(".json", ".pdf")
+        )
+        plt.savefig(save_path, dpi=300, bbox_inches="tight")
+        print(f"\n✓ Plot saved to: {save_path}")
+    else:
+        plt.show()
+
+
+def visualize_scale_factor_comparison(
+    filename: str = "scale_factor_comparison.json",
+    save: bool = False,
+) -> None:
+    """Visualize comparison of different scale factors for SSR downsampling.
+
+    Uses line plots to show how scale factor affects success rate and processing time.
+
+    Args:
+        filename: JSON file containing comparison results
+        save: If True, save plot to PDF. If False, display interactively.
+    """
+
+    # Load results
+    load_path = Path(filename)
+    if not load_path.is_absolute():
+        load_path = DATA_DIR / "experiment" / filename
+
+    with open(load_path, encoding="utf-8") as f:
+        results = json.load(f)
+
+    # Organize data by dataset and scale factor
+    data = {}
+    for r in results:
+        dataset = r["dataset"]
+        scale_factor = r["algorithm_params"].get("scale_factor", 0.5)
+
+        if dataset not in data:
+            data[dataset] = {}
+        data[dataset][scale_factor] = {
+            "success_rate": r["success_rate"],
+            "processing_time": r["processing_time"],
+        }
+
+    # Create visualization with 2 subplots (vertical layout)
+    fig, (ax1, ax2) = plt.subplots(2, 1, figsize=(12, 10))
+
+    datasets = list(data.keys())
+    dataset_labels = {"low_light": "Low Light", "non_uniform": "Non-Uniform"}
+
+    # Color scheme for datasets
+    colors = {
+        "low_light": "#2E86AB",  # Deep blue
+        "non_uniform": "#06A77D",  # Teal
+    }
+
+    # Line styles
+    line_styles = {
+        "low_light": "-",
+        "non_uniform": "--",
+    }
+
+    markers = {
+        "low_light": "o",
+        "non_uniform": "s",
+    }
+
+    # Success rate comparison (top subplot)
+    for dataset in datasets:
+        scale_factors = sorted(data[dataset].keys())
+        rates = [data[dataset][sf]["success_rate"] for sf in scale_factors]
+
+        ax1.plot(
+            scale_factors,
+            rates,
+            label=dataset_labels[dataset],
+            color=colors[dataset],
+            linestyle=line_styles[dataset],
+            marker=markers[dataset],
+            markersize=8,
+            linewidth=2.5,
+            markeredgewidth=1.5,
+            markeredgecolor="white",
+            alpha=0.85,
+        )
+
+        # Add value labels
+        for sf, rate in zip(scale_factors, rates):
+            ax1.annotate(
+                f"{rate:.1f}%",
+                (sf, rate),
+                textcoords="offset points",
+                xytext=(0, 10),
+                ha="center",
+                fontsize=8,
+                fontweight="bold",
+                color=colors[dataset],
+            )
+
+    ax1.set_xlabel("Scale Factor", fontsize=12, fontweight="bold")
+    ax1.set_ylabel("Detection Success Rate (%)", fontsize=12, fontweight="bold")
+    ax1.set_title(
+        "Scale Factor Impact on Success Rate",
+        fontsize=14,
+        fontweight="bold",
+        pad=15,
+    )
+    ax1.legend(framealpha=0.9, edgecolor="gray", fontsize=11, loc="best")
+    ax1.grid(True, alpha=0.3, linestyle="--")
+    ax1.set_xlim(min(scale_factors) - 0.02, max(scale_factors) + 0.02)
+
+    # Processing time comparison (bottom subplot)
+    for dataset in datasets:
+        scale_factors = sorted(data[dataset].keys())
+        times = [data[dataset][sf]["processing_time"] for sf in scale_factors]
+
+        ax2.plot(
+            scale_factors,
+            times,
+            label=dataset_labels[dataset],
+            color=colors[dataset],
+            linestyle=line_styles[dataset],
+            marker=markers[dataset],
+            markersize=8,
+            linewidth=2.5,
+            markeredgewidth=1.5,
+            markeredgecolor="white",
+            alpha=0.85,
+        )
+
+        # Add value labels
+        for sf, time in zip(scale_factors, times):
+            ax2.annotate(
+                f"{time:.2f}s",
+                (sf, time),
+                textcoords="offset points",
+                xytext=(0, 10),
+                ha="center",
+                fontsize=8,
+                fontweight="bold",
+                color=colors[dataset],
+            )
+
+    ax2.set_xlabel("Scale Factor", fontsize=12, fontweight="bold")
+    ax2.set_ylabel("Processing Time (seconds)", fontsize=12, fontweight="bold")
+    ax2.set_title(
+        "Scale Factor Impact on Processing Time",
+        fontsize=14,
+        fontweight="bold",
+        pad=15,
+    )
+    ax2.legend(framealpha=0.9, edgecolor="gray", fontsize=11, loc="best")
+    ax2.grid(True, alpha=0.3, linestyle="--")
+    ax2.set_xlim(min(scale_factors) - 0.02, max(scale_factors) + 0.02)
+
+    # Add overall title
+    fig.suptitle(
+        "SSR Downsampling: Scale Factor Optimization Analysis",
+        fontsize=16,
+        fontweight="bold",
+        y=0.995,
+    )
+
+    plt.tight_layout()
+
+    if save:
+        save_path = (
+            IMAGES_DIR / "experiment" / "display_data" / "scale_factor_comparison.pdf"
+        )
+        plt.savefig(save_path, dpi=300, bbox_inches="tight")
+        print(f"\n✓ Plot saved to: {save_path}")
+    else:
+        plt.show()
+
+
 def visualize_retinex_parameter_space(
     filenames: dict[str, str] | None = None,
     save: bool = False,

@@ -138,6 +138,8 @@ class RetinexPreprocess:
         sigma: float = 80,
         use_log_scale: bool = True,
         smart_normalize: bool = False,
+        decomposition_method: str = "ssr",
+        scale_factor: float = 0.5,
         prefilter: str | None = None,
         postfilter: str | None = None,
         prefilter_params: dict | None = None,
@@ -146,6 +148,22 @@ class RetinexPreprocess:
         use_gaussian_prefilter: bool = False,
         use_median_postfilter: bool = False,
     ):
+        """Initialize Retinex preprocessing.
+
+        Args:
+            sigma: Gaussian blur sigma for SSR, or used as default for MSR
+            use_log_scale: If True, keep in log domain; if False, convert back with expm1
+            smart_normalize: If True, use gain_compensation; if False, use cv2.normalize
+            decomposition_method: Retinex decomposition method
+                - "ssr": Standard single scale retinex
+                - "ssr_downsample": SSR with downsampling for efficiency
+                - "msr_downsample": Multi-scale retinex with downsampling
+            scale_factor: Downsampling factor for downsample methods (default: 0.5)
+            prefilter: Prefilter type to apply before Retinex
+            postfilter: Postfilter type to apply after normalization
+            prefilter_params: Parameters for prefilter
+            postfilter_params: Parameters for postfilter
+        """
         # Handle backward compatibility
         if use_gaussian_prefilter and prefilter is None:
             prefilter = "gaussian"
@@ -155,6 +173,8 @@ class RetinexPreprocess:
         self.sigma = sigma
         self.use_log_scale = use_log_scale
         self.smart_normalize = smart_normalize
+        self.decomposition_method = decomposition_method
+        self.scale_factor = scale_factor
         self.prefilter = prefilter
         self.postfilter = postfilter
         self.prefilter_params = prefilter_params or {}
@@ -163,7 +183,22 @@ class RetinexPreprocess:
     def __call__(self, img: MatLike) -> MatLike:
         result = apply_filter(img, self.prefilter, self.prefilter_params)
 
-        result = img_prep.single_scale_retinex(result, self.sigma)
+        # Apply Retinex decomposition based on method
+        match self.decomposition_method:
+            case "ssr":
+                result = img_prep.single_scale_retinex(result, self.sigma)
+            case "ssr_downsample":
+                result = img_prep.ssr_with_downsample(
+                    result, self.sigma, self.scale_factor
+                )
+            case "msr_downsample":
+                result = img_prep.msr_with_downsample(
+                    result, scale_factor=self.scale_factor
+                )
+            case _:
+                raise ValueError(
+                    f"Unknown decomposition method: {self.decomposition_method}"
+                )
 
         if not self.use_log_scale:
             result = np.expm1(result)

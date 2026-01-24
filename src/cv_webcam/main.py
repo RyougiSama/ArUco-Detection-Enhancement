@@ -80,7 +80,7 @@ def main() -> None:
     cv_webcam.init_app()
 
     # Option 1: Run comprehensive evaluation with plots
-    if False:
+    if True:
         experiment.run_experiment()
 
     # Option 2: Test single algorithm configuration
@@ -98,7 +98,7 @@ def main() -> None:
         print(f"\n✓ Success rate: {result.success_rate:.1f}%")
 
     # Option 3: Compare multiple algorithms
-    if True:
+    if False:
         test_multiple_algorithm()
 
     # Option 4: Visualize datasets

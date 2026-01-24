@@ -4,13 +4,13 @@ import json
 import time
 from dataclasses import dataclass, field
 from typing import Literal
-
+import numpy as np
 import cv2
 
 from cv_webcam import DATA_DIR, IMAGES_DIR
 from cv_webcam.core import create_aruco_detector
 
-from . import algorithms, analysis, visualizer
+from . import algorithms, visualizer
 
 
 @dataclass
@@ -727,6 +727,210 @@ def compare_postfilter(
     return results
 
 
+def compare_retinex_decomposition(
+    datasets: list[Literal["low_light", "non_uniform"]] | None = None,
+    filename: str = "retinex_decomposition_comparison.json",
+) -> list[ExperimentResult]:
+    """Compare different Retinex decomposition methods.
+
+    Compares:
+    - SSR (Standard Single Scale Retinex)
+    - SSR with Downsampling
+    - MSR with Downsampling
+
+    All use:
+    - Log scale (use_log_scale=True)
+    - Smart normalize (gain_compensation)
+    - Gaussian prefilter
+    - No postfilter
+    - Sigma=80 for SSR methods
+
+    Args:
+        datasets: Datasets to test (default: ["low_light", "non_uniform"])
+        filename: JSON filename to save results
+
+    Returns:
+        List of experiment results
+    """
+    if datasets is None:
+        datasets = ["low_light", "non_uniform"]
+
+    configs = []
+
+    # Test three decomposition methods
+    decomposition_methods = [
+        ("SSR", "ssr"),
+        ("SSR_Downsample", "ssr_downsample"),
+        ("MSR_Downsample", "msr_downsample"),
+    ]
+
+    for method_name, method_type in decomposition_methods:
+        for dataset in datasets:
+            params = {
+                "sigma": 80,
+                "use_log_scale": True,
+                "smart_normalize": True,
+                "decomposition_method": method_type,
+                "scale_factor": 0.5,
+                "prefilter": "gaussian",
+                "postfilter": "median",
+                "prefilter_params": {"ksize": (5, 5), "sigma": 0},
+                "postfilter_params": {"ksize": 5},
+            }
+
+            configs.append(
+                ExperimentConfig(
+                    dataset=dataset,
+                    algorithm="retinex",
+                    algorithm_params=params,
+                )
+            )
+
+    print("\n" + "=" * 70)
+    print("Retinex Decomposition Method Comparison")
+    print("Methods: SSR, SSR_Downsample, MSR_Downsample")
+    print("Config: Log Scale, Smart Normalize, Gaussian Prefilter, Sigma=80")
+    print(f"Datasets: {', '.join(d.replace('_', ' ').title() for d in datasets)}")
+    print("=" * 70)
+
+    results = run_batch_experiments(configs)
+    save_results(results, filename)
+
+    # Print summary table
+    print("\n" + "=" * 70)
+    print("Summary Table:")
+    print("=" * 70)
+    print(f"{'Method':<20} {'Dataset':<15} {'Success Rate':<15} {'Time (s)':<10}")
+    print("-" * 70)
+
+    for result in results:
+        method = result.config.algorithm_params.get("decomposition_method", "ssr")
+        method_label = method.replace("_", " ").upper()
+        dataset = result.config.dataset.replace("_", " ").title()
+        print(
+            f"{method_label:<20} {dataset:<15} {result.success_rate:>6.2f}%         {result.processing_time:>6.3f}"
+        )
+
+    print("=" * 70)
+
+    # Compare methods for each dataset
+    print("\nComparison by Dataset:")
+    print("-" * 70)
+    for dataset in datasets:
+        dataset_results = [r for r in results if r.config.dataset == dataset]
+
+        print(f"\n{dataset.replace('_', ' ').title()}:")
+        for result in dataset_results:
+            method = result.config.algorithm_params.get("decomposition_method", "ssr")
+            method_label = method.replace("_", " ").upper()
+            print(
+                f"  {method_label:<18}: {result.success_rate:>6.2f}%  ({result.processing_time:.3f}s)"
+            )
+
+    print("=" * 70 + "\n")
+
+    return results
+
+
+def compare_scale_factor(
+    scale_factors: list[float] | None = None,
+    datasets: list[Literal["low_light", "non_uniform"]] | None = None,
+    filename: str = "scale_factor_comparison.json",
+) -> list[ExperimentResult]:
+    """Compare different scale factors for SSR with downsampling.
+
+    Uses:
+    - SSR with downsampling
+    - Gaussian prefilter: ksize=(5,5)
+    - Median postfilter: ksize=5
+    - Log scale (use_log_scale=True)
+    - Smart normalize (gain_compensation)
+    - Sigma=80
+
+    Args:
+        scale_factors: List of scale factors to test (default: 0.2 to 0.5, step 0.05)
+        datasets: Datasets to test (default: ["low_light", "non_uniform"])
+        filename: JSON filename to save results
+
+    Returns:
+        List of experiment results
+    """
+    if datasets is None:
+        datasets = ["low_light", "non_uniform"]
+
+    if scale_factors is None:
+        # Generate scale factors from 0.05 to 0.5 with step 0.05
+        scale_factors = np.arange(0.05, 0.55, 0.05).round(2).tolist()
+
+    configs = []
+
+    for scale_factor in scale_factors:
+        for dataset in datasets:
+            params = {
+                "sigma": 80,
+                "use_log_scale": True,
+                "smart_normalize": True,
+                "decomposition_method": "ssr_downsample",
+                "scale_factor": scale_factor,
+                "prefilter": "gaussian",
+                "prefilter_params": {"ksize": (5, 5)},
+                "postfilter": "median",
+                "postfilter_params": {"ksize": 5},
+            }
+
+            configs.append(
+                ExperimentConfig(
+                    dataset=dataset,
+                    algorithm="retinex",
+                    algorithm_params=params,
+                )
+            )
+
+    print("\n" + "=" * 70)
+    print("Scale Factor Comparison for SSR with Downsampling")
+    print(f"Scale Factors: {', '.join(f'{sf:.2f}' for sf in scale_factors)}")
+    print("Config: Log Scale, Smart Normalize")
+    print("Prefilter: Gaussian (5x5), Postfilter: Median (5), Sigma=80")
+    print(f"Datasets: {', '.join(d.replace('_', ' ').title() for d in datasets)}")
+    print("=" * 70)
+
+    results = run_batch_experiments(configs)
+    save_results(results, filename)
+
+    # Print summary table
+    print("\n" + "=" * 70)
+    print("Summary Table:")
+    print("=" * 70)
+    print(f"{'Scale Factor':<15} {'Dataset':<15} {'Success Rate':<15} {'Time (s)':<10}")
+    print("-" * 70)
+
+    for result in results:
+        scale_factor = result.config.algorithm_params.get("scale_factor", 0.5)
+        dataset = result.config.dataset.replace("_", " ").title()
+        print(
+            f"{scale_factor:<15.2f} {dataset:<15} {result.success_rate:>6.2f}%         {result.processing_time:>6.3f}"
+        )
+
+    print("=" * 70)
+
+    # Compare scale factors for each dataset
+    print("\nComparison by Dataset:")
+    print("-" * 70)
+    for dataset in datasets:
+        dataset_results = [r for r in results if r.config.dataset == dataset]
+
+        print(f"\n{dataset.replace('_', ' ').title()}:")
+        for result in dataset_results:
+            scale_factor = result.config.algorithm_params.get("scale_factor", 0.5)
+            print(
+                f"  SF={scale_factor:.2f}: {result.success_rate:>6.2f}%  ({result.processing_time:.3f}s)"
+            )
+
+    print("=" * 70 + "\n")
+
+    return results
+
+
 def run_experiment() -> None:
     """Main experiment runner with various demo options."""
     # visualizer.draw_low_light_imgs(save=True)
@@ -774,7 +978,21 @@ def run_experiment() -> None:
         compare_postfilter()
         visualizer.visualize_postfilter_comparison(save=True)
 
+    if False:
+        compare_retinex_decomposition(
+            filename="retinex_decomposition_comparison_change_order.json"
+        )
+        visualizer.visualize_retinex_decomposition_comparison(
+            filename="retinex_decomposition_comparison_change_order.json", save=True
+        )
+
     if True:
+        compare_scale_factor(filename="scale_factor_comparison_ssr_downsample.json")
+        visualizer.visualize_scale_factor_comparison(
+            filename="scale_factor_comparison_ssr_downsample.json", save=True
+        )
+
+    if False:
         img = cv2.imread(
             # str(IMAGES_DIR / "experiment" / "low_light" / "img_0_dark_lv1.png"),
             str(IMAGES_DIR / "experiment" / "non_uniform" / "img_0_sigma500.png"),
@@ -782,18 +1000,19 @@ def run_experiment() -> None:
         )
         assert img is not None
 
-        print("original noise: ", analysis.identify_noise(img))
+        # print("original noise: ", analysis.identify_noise(img))
 
         algo = algorithms.get_algorithm(
             "retinex",
             sigma=80,
             use_log_scale=True,
             smart_normalize=True,
-            prefilter="median",
+            prefilter="gaussian",
+            postfilter="median",
         )
-        processed = algo(img)
-        print("processed noise: ", analysis.identify_noise(processed))
+        algo(img)
+        # print("processed noise: ", analysis.identify_noise(processed))
 
-        cv2.imshow("Processed Image", processed)
-        cv2.waitKey(0)
-        cv2.destroyAllWindows()
+        # cv2.imshow("Processed Image", processed)
+        # cv2.waitKey(0)
+        # cv2.destroyAllWindows()
