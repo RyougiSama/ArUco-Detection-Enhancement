@@ -5,6 +5,7 @@ import matplotlib.pyplot as plt
 import numpy as np
 from cv2.typing import MatLike
 from matplotlib.axes import Axes
+from scipy.stats import kurtosis
 
 from cv_webcam.core.img_prep import gain_compensation, single_scale_retinex
 
@@ -166,3 +167,16 @@ def show_retinex_distribution(img: MatLike) -> None:
         plt.tight_layout()
 
     plt.show()
+
+
+def identify_noise(image: MatLike) -> str:
+    salt_pepper_ratio = (np.sum(image == 0) + np.sum(image == 255)) / image.size
+
+    img_kurtosis = kurtosis(image.flatten())
+
+    if salt_pepper_ratio > 0.01:
+        return "Salt-and-Pepper"
+    elif 2.5 < (img_kurtosis + 3) < 3.5:
+        return "Gaussian"
+    else:
+        return "Unknown or Mixed Noise"

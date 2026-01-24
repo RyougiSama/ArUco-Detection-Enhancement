@@ -17,51 +17,62 @@ def test_detector(url: str) -> None:
 
 
 def test_multiple_algorithm() -> None:
-    # Default filter settings for all algorithms
-    default_filters = {
-        "use_gaussian_prefilter": True,
-        "use_median_postfilter": True,
-    }
     configs = [
         experiment.ExperimentConfig(
             dataset="low_light",
             algorithm="retinex",
             algorithm_params={
-                **default_filters,
                 "sigma": 80,
-                "use_log_scale": False,
+                "use_log_scale": True,
+                "smart_normalize": True,
+                "prefilter": "gaussian",
+                "postfilter": "median",
+                "prefilter_params": {"ksize": (5, 5), "sigma": 0},
+                "postfilter_params": {"ksize": 3},
+            },
+        ),
+        experiment.ExperimentConfig(
+            dataset="non_uniform",
+            algorithm="retinex",
+            algorithm_params={
+                "sigma": 80,
+                "use_log_scale": True,
+                "smart_normalize": True,
+                "prefilter": "gaussian",
+                "postfilter": "median",
+                "prefilter_params": {"ksize": (5, 5), "sigma": 0},
+                "postfilter_params": {"ksize": 3},
             },
         ),
         experiment.ExperimentConfig(
             dataset="low_light",
             algorithm="retinex",
             algorithm_params={
-                **default_filters,
                 "sigma": 80,
                 "use_log_scale": True,
+                "smart_normalize": True,
+                "prefilter": "gaussian",
+                "postfilter": "median",
+                "prefilter_params": {"ksize": (5, 5), "sigma": 0},
+                "postfilter_params": {"ksize": 7},
             },
         ),
         experiment.ExperimentConfig(
             dataset="non_uniform",
             algorithm="retinex",
             algorithm_params={
-                **default_filters,
-                "sigma": 80,
-                "use_log_scale": False,
-            },
-        ),
-        experiment.ExperimentConfig(
-            dataset="non_uniform",
-            algorithm="retinex",
-            algorithm_params={
-                **default_filters,
                 "sigma": 80,
                 "use_log_scale": True,
+                "smart_normalize": True,
+                "prefilter": "gaussian",
+                "postfilter": "median",
+                "prefilter_params": {"ksize": (5, 5), "sigma": 0},
+                "postfilter_params": {"ksize": 7},
             },
         ),
     ]
     results = experiment.run_batch_experiments(configs)
-    experiment.save_results(results, "comparison_log_or_exp.json")
+    experiment.save_results(results, "gaussian_k_size.json")
 
 
 def main() -> None:
@@ -69,7 +80,7 @@ def main() -> None:
     cv_webcam.init_app()
 
     # Option 1: Run comprehensive evaluation with plots
-    if True:
+    if False:
         experiment.run_experiment()
 
     # Option 2: Test single algorithm configuration
@@ -87,7 +98,7 @@ def main() -> None:
         print(f"\n✓ Success rate: {result.success_rate:.1f}%")
 
     # Option 3: Compare multiple algorithms
-    if False:
+    if True:
         test_multiple_algorithm()
 
     # Option 4: Visualize datasets

@@ -10,7 +10,7 @@ import cv2
 from cv_webcam import DATA_DIR, IMAGES_DIR
 from cv_webcam.core import create_aruco_detector
 
-from . import algorithms, visualizer
+from . import algorithms, analysis, visualizer
 
 
 @dataclass
@@ -260,7 +260,7 @@ def plot_results(save: bool = False) -> None:
     visualizer.plot_performance_comparison(results, save=save)
 
 
-def visulize_test() -> None:
+def visualize_test() -> None:
     """Visualize algorithm comparison on a single image."""
     img_path = IMAGES_DIR / "experiment" / "low_light" / "img_0_dark_lv3.png"
     img = cv2.imread(str(img_path), cv2.IMREAD_GRAYSCALE)
@@ -293,16 +293,50 @@ def visulize_test() -> None:
         cv2.imshow("Retinex Image 3", retinex_img_3)
         cv2.waitKey(0)
         cv2.destroyAllWindows()
-    if True:
+    if False:
         from .analysis import show_retinex_distribution
 
         show_retinex_distribution(img)
+    if True:
+        import numpy as np
+
+        from cv_webcam.core import img_prep
+
+        retinex_log = img_prep.single_scale_retinex(img, sigma=80)
+        normalized_retinex_log = cv2.normalize(
+            retinex_log,
+            None,  # type: ignore
+            0,
+            255,
+            cv2.NORM_MINMAX,
+        )  # type: ignore
+        gain_retinex_log = img_prep.gain_compensation(retinex_log)
+
+        retinex_exp = np.expm1(retinex_log)
+        normalized_retinex_exp = cv2.normalize(
+            retinex_exp,
+            None,  # type: ignore
+            0,
+            255,
+            cv2.NORM_MINMAX,
+        )  # type: ignore
+        gain_retinex_exp = img_prep.gain_compensation(retinex_exp)
+
+        cv2.imshow("Original Image", img)
+        cv2.imshow("Retinex Log", retinex_log.astype(np.uint8))
+        cv2.imshow("Normalized Retinex Log", normalized_retinex_log.astype(np.uint8))
+        cv2.imshow("Gain Compensated Retinex Log", gain_retinex_log.astype(np.uint8))
+        cv2.imshow("Retinex Exp", retinex_exp.astype(np.uint8))
+        cv2.imshow("Normalized Retinex Exp", normalized_retinex_exp.astype(np.uint8))
+        cv2.imshow("Gain Compensated Retinex Exp", gain_retinex_exp.astype(np.uint8))
+        cv2.waitKey(0)
+        cv2.destroyAllWindows()
 
 
 def compare_prefilters(
-    prefilters: dict[str, dict],
+    prefilters: dict[str, dict] | None = None,
     algorithm: str = "retinex",
-    postfilter: str = "median",
+    postfilter: str | None = None,
     algorithm_params: dict | None = None,
     datasets: list[Literal["low_light", "non_uniform"]] | None = None,
     filename: str = "prefilter_comparison.json",
@@ -311,10 +345,12 @@ def compare_prefilters(
 
     Args:
         prefilters: Dict of {filter_name: filter_params}
-            e.g., {"Gaussian": {"filter": "gaussian"}, "Bilateral": {"filter": "bilateral", "params": {...}}}
+            e.g., {"None": {}, "Gaussian": {"filter": "gaussian"}, "Median": {"filter": "median"}}
+            Default: None, Gaussian, and Median prefilters
         algorithm: Algorithm to test (default: "retinex")
-        postfilter: Postfilter to use for all tests (default: "median")
-        algorithm_params: Additional algorithm parameters (e.g., sigma, use_log_scale)
+        postfilter: Postfilter to use for all tests (default: None)
+        algorithm_params: Additional algorithm parameters
+            Default: use_log_scale=True, smart_normalize=True, sigma=80
         datasets: List of datasets to test (default: ["low_light", "non_uniform"])
         filename: JSON filename to save results
 
@@ -324,8 +360,19 @@ def compare_prefilters(
     if datasets is None:
         datasets = ["low_light", "non_uniform"]
 
+    if prefilters is None:
+        prefilters = {
+            "None": {},
+            "Gaussian": {"filter": "gaussian"},
+            "Median": {"filter": "median"},
+        }
+
     if algorithm_params is None:
-        algorithm_params = {}
+        algorithm_params = {
+            "sigma": 80,
+            "use_log_scale": True,
+            "smart_normalize": True,
+        }
 
     configs = []
 
@@ -353,7 +400,10 @@ def compare_prefilters(
 
     print("\n" + "=" * 70)
     print(f"Comparing Prefilters: {', '.join(prefilters.keys())}")
-    print(f"Algorithm: {algorithm.upper()}, Postfilter: {postfilter}")
+    print(f"Algorithm: {algorithm.upper()} (Log Scale, Smart Normalize)")
+    print(
+        f"Postfilter: {postfilter if postfilter else 'None'}, Sigma: {algorithm_params.get('sigma', 80)}"
+    )
     print("=" * 70)
 
     results = run_batch_experiments(configs)
@@ -475,6 +525,208 @@ def compare_sigma_values(
     return results
 
 
+def compare_smart_normalize(
+    algorithm: str = "retinex",
+    datasets: list[Literal["low_light", "non_uniform"]] | None = None,
+    use_log_scale: bool = False,
+    prefilter: str | None = None,
+    postfilter: str | None = None,
+    filename: str = "smart_normalize_comparison.json",
+) -> list[ExperimentResult]:
+    """Compare Retinex with smart_normalize (gain_compensation) vs cv2.normalize.
+
+    Args:
+        algorithm: Algorithm to test (default: "retinex")
+        datasets: Datasets to test (default: ["low_light", "non_uniform"])
+        filename: JSON filename to save results
+
+    Returns:
+        List of experiment results
+    """
+    if datasets is None:
+        datasets = ["low_light", "non_uniform"]
+
+    configs = []
+
+    # Test both normalization methods
+    normalize_methods = [
+        ("cv2.normalize", False),
+        ("gain_compensation", True),
+    ]
+
+    for method_name, use_smart in normalize_methods:
+        for dataset in datasets:
+            params = {
+                "sigma": 80,  # Default sigma
+                "use_log_scale": use_log_scale,
+                "smart_normalize": use_smart,
+                "prefilter": prefilter,
+                "postfilter": postfilter,
+            }
+
+            configs.append(
+                ExperimentConfig(
+                    dataset=dataset,
+                    algorithm=algorithm,
+                    algorithm_params=params,
+                )
+            )
+
+    print("\n" + "=" * 70)
+    print("Smart Normalize Comparison: cv2.normalize vs gain_compensation")
+    print(f"Algorithm: {algorithm.upper()}, Sigma: 80, No Filters")
+    print(f"Datasets: {', '.join(d.replace('_', ' ').title() for d in datasets)}")
+    print("=" * 70)
+
+    results = run_batch_experiments(configs)
+    save_results(results, filename)
+
+    # Print summary table
+    print("\n" + "=" * 70)
+    print("Summary Table:")
+    print("=" * 70)
+    print(f"{'Method':<20} {'Dataset':<15} {'Success Rate':<15} {'Time (s)':<10}")
+    print("-" * 70)
+
+    for result in results:
+        use_smart = result.config.algorithm_params.get("smart_normalize", False)
+        method = "gain_compensation" if use_smart else "cv2.normalize"
+        dataset = result.config.dataset.replace("_", " ").title()
+        print(
+            f"{method:<20} {dataset:<15} {result.success_rate:>6.2f}%         {result.processing_time:>6.3f}"
+        )
+
+    print("=" * 70)
+
+    # Compare methods for each dataset
+    print("\nComparison by Dataset:")
+    print("-" * 70)
+    for dataset in datasets:
+        dataset_results = [r for r in results if r.config.dataset == dataset]
+        cv2_result = next(
+            r
+            for r in dataset_results
+            if not r.config.algorithm_params.get("smart_normalize", False)
+        )
+        smart_result = next(
+            r
+            for r in dataset_results
+            if r.config.algorithm_params.get("smart_normalize", False)
+        )
+
+        rate_diff = smart_result.success_rate - cv2_result.success_rate
+        time_diff = smart_result.processing_time - cv2_result.processing_time
+
+        print(f"\n{dataset.replace('_', ' ').title()}:")
+        print(
+            f"  cv2.normalize:      {cv2_result.success_rate:>6.2f}%  ({cv2_result.processing_time:.3f}s)"
+        )
+        print(
+            f"  gain_compensation:  {smart_result.success_rate:>6.2f}%  ({smart_result.processing_time:.3f}s)"
+        )
+        print(f"  Difference:         {rate_diff:>+6.2f}%  ({time_diff:+.3f}s)")
+
+    print("=" * 70 + "\n")
+
+    return results
+
+
+def compare_postfilter(
+    datasets: list[Literal["low_light", "non_uniform"]] | None = None,
+    filename: str = "postfilter_comparison.json",
+) -> list[ExperimentResult]:
+    """Compare Retinex with different postfilter options.
+
+    Uses:
+    - Retinex algorithm with log scale
+    - Default sigma (80)
+    - Gaussian prefilter (default params)
+    - Smart normalize (gain_compensation)
+    - Postfilter options: None, Gaussian, Median
+
+    Args:
+        datasets: Datasets to test (default: ["low_light", "non_uniform"])
+        filename: JSON filename to save results
+
+    Returns:
+        List of experiment results
+    """
+    if datasets is None:
+        datasets = ["low_light", "non_uniform"]
+
+    configs = []
+
+    # Test three postfilter configurations
+    postfilter_configs = [
+        ("None", None),
+        ("Gaussian", "gaussian"),
+        ("Median", "median"),
+    ]
+
+    for postfilter_name, postfilter_type in postfilter_configs:
+        for dataset in datasets:
+            params = {
+                "sigma": 80,
+                "use_log_scale": True,
+                "smart_normalize": True,
+                "prefilter": "gaussian",
+                "postfilter": postfilter_type,
+            }
+
+            configs.append(
+                ExperimentConfig(
+                    dataset=dataset,
+                    algorithm="retinex",
+                    algorithm_params=params,
+                )
+            )
+
+    print("\n" + "=" * 70)
+    print("Postfilter Comparison: None vs Gaussian vs Median")
+    print("Algorithm: RETINEX (Log Scale, Smart Normalize)")
+    print("Prefilter: Gaussian (default), Sigma: 80")
+    print(f"Datasets: {', '.join(d.replace('_', ' ').title() for d in datasets)}")
+    print("=" * 70)
+
+    results = run_batch_experiments(configs)
+    save_results(results, filename)
+
+    # Print summary table
+    print("\n" + "=" * 70)
+    print("Summary Table:")
+    print("=" * 70)
+    print(f"{'Postfilter':<15} {'Dataset':<15} {'Success Rate':<15} {'Time (s)':<10}")
+    print("-" * 70)
+
+    for result in results:
+        postfilter = result.config.algorithm_params.get("postfilter", "None")
+        postfilter_label = postfilter if postfilter else "None"
+        dataset = result.config.dataset.replace("_", " ").title()
+        print(
+            f"{postfilter_label:<15} {dataset:<15} {result.success_rate:>6.2f}%         {result.processing_time:>6.3f}"
+        )
+
+    print("=" * 70)
+
+    # Compare postfilters for each dataset
+    print("\nComparison by Dataset:")
+    print("-" * 70)
+    for dataset in datasets:
+        dataset_results = [r for r in results if r.config.dataset == dataset]
+
+        print(f"\n{dataset.replace('_', ' ').title()}:")
+        for result in dataset_results:
+            postfilter = result.config.algorithm_params.get("postfilter", None)
+            postfilter_label = postfilter if postfilter else "None"
+            print(
+                f"  {postfilter_label:<12}: {result.success_rate:>6.2f}%  ({result.processing_time:.3f}s)"
+            )
+
+    print("=" * 70 + "\n")
+
+    return results
+
+
 def run_experiment() -> None:
     """Main experiment runner with various demo options."""
     # visualizer.draw_low_light_imgs(save=True)
@@ -484,4 +736,64 @@ def run_experiment() -> None:
     # Comprehensive evaluation with plots
     # plot_results(save=False)
 
-    visulize_test()
+    if False:
+        compare_smart_normalize(
+            use_log_scale=False,
+            prefilter="gaussian",
+            filename="smart_normalize_linear_prefilter.json",
+        )
+        visualizer.visualize_smart_normalize_comparison(
+            filename="smart_normalize_linear_prefilter.json", save=True
+        )
+
+        compare_smart_normalize(
+            use_log_scale=True,
+            prefilter="gaussian",
+            filename="smart_normalize_log_prefilter.json",
+        )
+
+        visualizer.visualize_smart_normalize_comparison(
+            filename="smart_normalize_log_prefilter.json", save=True
+        )
+
+    if False:
+        # visualize_test()
+        visualizer.visualize_retinex_parameter_space(save=True)
+
+    if False:
+        # Compare prefilter options
+        compare_prefilters(
+            postfilter="median", filename="prefilter_use_postmedian_comparison.json"
+        )
+        visualizer.visualize_prefilter_comparison(
+            filename="prefilter_use_postmedian_comparison.json", save=True
+        )
+
+    if False:
+        # Compare postfilter options
+        compare_postfilter()
+        visualizer.visualize_postfilter_comparison(save=True)
+
+    if True:
+        img = cv2.imread(
+            # str(IMAGES_DIR / "experiment" / "low_light" / "img_0_dark_lv1.png"),
+            str(IMAGES_DIR / "experiment" / "non_uniform" / "img_0_sigma500.png"),
+            cv2.IMREAD_GRAYSCALE,
+        )
+        assert img is not None
+
+        print("original noise: ", analysis.identify_noise(img))
+
+        algo = algorithms.get_algorithm(
+            "retinex",
+            sigma=80,
+            use_log_scale=True,
+            smart_normalize=True,
+            prefilter="median",
+        )
+        processed = algo(img)
+        print("processed noise: ", analysis.identify_noise(processed))
+
+        cv2.imshow("Processed Image", processed)
+        cv2.waitKey(0)
+        cv2.destroyAllWindows()

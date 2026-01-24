@@ -740,7 +740,7 @@ def visualize_prefilter_comparison(
     # Load results
     load_path = Path(filename)
     if not load_path.is_absolute():
-        load_path = DATA_DIR / filename
+        load_path = DATA_DIR / "experiment" / filename
 
     with open(load_path, encoding="utf-8") as f:
         results = json.load(f)
@@ -748,13 +748,14 @@ def visualize_prefilter_comparison(
     # Organize data by prefilter and dataset
     data = {}
     for r in results:
-        prefilter = r["algorithm_params"].get("prefilter", "none")
+        prefilter = r["algorithm_params"].get("prefilter", None)
+        prefilter_label = prefilter if prefilter else "None"
         dataset = r["dataset"]
 
-        if prefilter not in data:
-            data[prefilter] = {}
+        if prefilter_label not in data:
+            data[prefilter_label] = {}
 
-        data[prefilter][dataset] = {
+        data[prefilter_label][dataset] = {
             "success_rate": r["success_rate"],
             "processing_time": r["processing_time"],
         }
@@ -766,30 +767,210 @@ def visualize_prefilter_comparison(
     datasets = ["low_light", "non_uniform"]
 
     x = range(len(datasets))
-    width = 0.35
+    width = 0.25  # Adjusted for 3 bars
 
-    # Different color schemes for different metrics
-    # Success rate: cool tones (blues and greens) - representing accuracy
-    success_colors = ["#2E86AB", "#06A77D", "#6A4C93", "#E63946", "#F77F00"]
-    # Processing time: warm tones (oranges and purples) - representing performance
-    time_colors = ["#D81159", "#8F2D56", "#FF6B35", "#F4A261", "#E76F51"]
+    # Color scheme for prefilters
+    prefilter_colors = {
+        "None": "#2E86AB",  # Deep blue
+        "gaussian": "#06A77D",  # Teal
+        "median": "#A23B72",  # Purple
+    }
 
     # Success rate comparison
     for idx, prefilter in enumerate(prefilters):
         rates = [data[prefilter].get(ds, {}).get("success_rate", 0) for ds in datasets]
         offset = (idx - len(prefilters) / 2 + 0.5) * width
+
+        # Get color based on prefilter name
+        color = prefilter_colors.get(
+            prefilter, prefilter_colors.get(prefilter.lower(), "#6A4C93")
+        )
+
         bars = ax1.bar(
             [i + offset for i in x],
             rates,
             width,
-            label=prefilter.title(),
-            color=success_colors[idx % len(success_colors)],
+            label=prefilter.title() if prefilter != "None" else "No Prefilter",
+            color=color,
             alpha=0.85,
             edgecolor="white",
             linewidth=1.5,
         )
 
         # Add value labels
+        for bar in bars:
+            height = bar.get_height()
+            ax1.text(
+                bar.get_x() + bar.get_width() / 2.0,
+                height + 1,
+                f"{height:.1f}%",
+                ha="center",
+                va="bottom",
+                fontsize=9,
+                fontweight="bold",
+            )
+
+    ax1.set_xlabel("Dataset", fontsize=12, fontweight="bold")
+    ax1.set_ylabel("Detection Success Rate (%)", fontsize=12, fontweight="bold")
+    ax1.set_title("Prefilter Comparison: Success Rate", fontsize=14, fontweight="bold")
+    ax1.set_xticks(x)
+    ax1.set_xticklabels([ds.replace("_", " ").title() for ds in datasets])
+    ax1.set_ylim(
+        0,
+        max(
+            [
+                data[pf].get(ds, {}).get("success_rate", 0)
+                for pf in prefilters
+                for ds in datasets
+            ]
+        )
+        * 1.15,
+    )
+    ax1.legend(framealpha=0.9, edgecolor="gray", fontsize=10)
+    ax1.grid(axis="y", alpha=0.3, linestyle="--")
+
+    # Processing time comparison
+    for idx, prefilter in enumerate(prefilters):
+        times = [
+            data[prefilter].get(ds, {}).get("processing_time", 0) for ds in datasets
+        ]
+        offset = (idx - len(prefilters) / 2 + 0.5) * width
+
+        # Get color based on prefilter name
+        color = prefilter_colors.get(
+            prefilter, prefilter_colors.get(prefilter.lower(), "#6A4C93")
+        )
+
+        bars = ax2.bar(
+            [i + offset for i in x],
+            times,
+            width,
+            label=prefilter.title() if prefilter != "None" else "No Prefilter",
+            color=color,
+            alpha=0.85,
+            edgecolor="white",
+            linewidth=1.5,
+        )
+
+        # Add value labels
+        for bar in bars:
+            height = bar.get_height()
+            ax2.text(
+                bar.get_x() + bar.get_width() / 2.0,
+                height + 0.2,
+                f"{height:.2f}s",
+                ha="center",
+                va="bottom",
+                fontsize=9,
+                fontweight="bold",
+            )
+
+    ax2.set_xlabel("Dataset", fontsize=12, fontweight="bold")
+    ax2.set_ylabel("Processing Time (seconds)", fontsize=12, fontweight="bold")
+    ax2.set_title(
+        "Prefilter Comparison: Processing Time", fontsize=14, fontweight="bold"
+    )
+    ax2.set_xticks(x)
+    ax2.set_xticklabels([ds.replace("_", " ").title() for ds in datasets])
+    ax2.legend(framealpha=0.9, edgecolor="gray", fontsize=10)
+    ax2.grid(axis="y", alpha=0.3, linestyle="--")
+
+    # Add overall title
+    fig.suptitle(
+        "Retinex Prefilter Comparison: None vs Gaussian vs Median",
+        fontsize=15,
+        fontweight="bold",
+        y=1.00,
+    )
+
+    plt.tight_layout()
+
+    if save:
+        save_path = (
+            IMAGES_DIR
+            / "experiment"
+            / "display_data"
+            / filename.replace(".json", ".pdf")
+        )
+        plt.savefig(save_path, dpi=300, bbox_inches="tight")
+        print(f"\n✓ Plot saved to: {save_path}")
+    else:
+        plt.show()
+
+
+def visualize_smart_normalize_comparison(
+    filename: str = "smart_normalize_comparison.json",
+    save: bool = False,
+) -> None:
+    """Visualize comparison between cv2.normalize and gain_compensation methods.
+
+    Args:
+        filename: JSON file containing comparison results
+        save: If True, save plot to PDF. If False, display interactively.
+    """
+
+    # Load results
+    load_path = Path(filename)
+    if not load_path.is_absolute():
+        load_path = DATA_DIR / "experiment" / filename
+
+    with open(load_path, encoding="utf-8") as f:
+        results = json.load(f)
+
+    # Organize data by method and dataset
+    data = {}
+    for r in results:
+        dataset = r["dataset"]
+        use_smart = r["algorithm_params"].get("smart_normalize", False)
+        method = "gain_compensation" if use_smart else "cv2.normalize"
+
+        if dataset not in data:
+            data[dataset] = {}
+        data[dataset][method] = {
+            "success_rate": r["success_rate"],
+            "processing_time": r["processing_time"],
+        }
+
+    # Plot comparison
+    fig, (ax1, ax2) = plt.subplots(1, 2, figsize=(14, 6))
+
+    datasets = list(data.keys())
+
+    # Success rate comparison
+    x = range(len(datasets))
+    width = 0.35
+
+    cv2_rates = [
+        data[ds].get("cv2.normalize", {}).get("success_rate", 0) for ds in datasets
+    ]
+    smart_rates = [
+        data[ds].get("gain_compensation", {}).get("success_rate", 0) for ds in datasets
+    ]
+
+    # Use cool colors (blue/green) for success rate
+    bars1 = ax1.bar(
+        [i - width / 2 for i in x],
+        cv2_rates,
+        width,
+        label="cv2.normalize",
+        color="#2E86AB",  # Deep blue
+        alpha=0.85,
+        edgecolor="white",
+        linewidth=1.5,
+    )
+    bars2 = ax1.bar(
+        [i + width / 2 for i in x],
+        smart_rates,
+        width,
+        label="gain_compensation",
+        color="#06A77D",  # Teal green
+        alpha=0.85,
+        edgecolor="white",
+        linewidth=1.5,
+    )
+
+    # Add value labels
+    for bars in [bars1, bars2]:
         for bar in bars:
             height = bar.get_height()
             ax1.text(
@@ -804,31 +985,50 @@ def visualize_prefilter_comparison(
 
     ax1.set_xlabel("Dataset", fontsize=12, fontweight="bold")
     ax1.set_ylabel("Detection Success Rate (%)", fontsize=12, fontweight="bold")
-    ax1.set_title("Prefilter Comparison: Success Rate", fontsize=14, fontweight="bold")
+    ax1.set_title(
+        "Normalization Method Comparison: Success Rate",
+        fontsize=14,
+        fontweight="bold",
+    )
     ax1.set_xticks(x)
     ax1.set_xticklabels([ds.replace("_", " ").title() for ds in datasets])
     ax1.set_ylim(0, 110)
-    ax1.legend(framealpha=0.9, edgecolor="gray")
+    ax1.legend(framealpha=0.9, edgecolor="gray", fontsize=10)
     ax1.grid(axis="y", alpha=0.3, linestyle="--")
 
     # Processing time comparison
-    for idx, prefilter in enumerate(prefilters):
-        times = [
-            data[prefilter].get(ds, {}).get("processing_time", 0) for ds in datasets
-        ]
-        offset = (idx - len(prefilters) / 2 + 0.5) * width
-        bars = ax2.bar(
-            [i + offset for i in x],
-            times,
-            width,
-            label=prefilter.title(),
-            color=time_colors[idx % len(time_colors)],
-            alpha=0.85,
-            edgecolor="white",
-            linewidth=1.5,
-        )
+    cv2_times = [
+        data[ds].get("cv2.normalize", {}).get("processing_time", 0) for ds in datasets
+    ]
+    smart_times = [
+        data[ds].get("gain_compensation", {}).get("processing_time", 0)
+        for ds in datasets
+    ]
 
-        # Add value labels
+    # Use warm colors (red/purple) for processing time
+    bars1 = ax2.bar(
+        [i - width / 2 for i in x],
+        cv2_times,
+        width,
+        label="cv2.normalize",
+        color="#D81159",  # Crimson red
+        alpha=0.85,
+        edgecolor="white",
+        linewidth=1.5,
+    )
+    bars2 = ax2.bar(
+        [i + width / 2 for i in x],
+        smart_times,
+        width,
+        label="gain_compensation",
+        color="#8F2D56",  # Deep purple
+        alpha=0.85,
+        edgecolor="white",
+        linewidth=1.5,
+    )
+
+    # Add value labels
+    for bars in [bars1, bars2]:
         for bar in bars:
             height = bar.get_height()
             ax2.text(
@@ -844,20 +1044,455 @@ def visualize_prefilter_comparison(
     ax2.set_xlabel("Dataset", fontsize=12, fontweight="bold")
     ax2.set_ylabel("Processing Time (seconds)", fontsize=12, fontweight="bold")
     ax2.set_title(
-        "Prefilter Comparison: Processing Time", fontsize=14, fontweight="bold"
+        "Normalization Method Comparison: Processing Time",
+        fontsize=14,
+        fontweight="bold",
     )
     ax2.set_xticks(x)
     ax2.set_xticklabels([ds.replace("_", " ").title() for ds in datasets])
-    ax2.legend(framealpha=0.9, edgecolor="gray")
+    ax2.legend(framealpha=0.9, edgecolor="gray", fontsize=10)
     ax2.grid(axis="y", alpha=0.3, linestyle="--")
+
+    # Add overall title
+    fig.suptitle(
+        "Retinex Smart Normalize Comparison: cv2.normalize vs gain_compensation",
+        fontsize=15,
+        fontweight="bold",
+        y=1.00,
+    )
 
     plt.tight_layout()
 
     if save:
         save_path = (
-            IMAGES_DIR / "experiment" / "display_data" / "prefilter_comparison.pdf"
+            IMAGES_DIR
+            / "experiment"
+            / "display_data"
+            / "smart_normalize_comparison.pdf"
         )
         plt.savefig(save_path, dpi=300, bbox_inches="tight")
         print(f"\n✓ Plot saved to: {save_path}")
+    else:
+        plt.show()
+
+
+def visualize_postfilter_comparison(
+    filename: str = "postfilter_comparison.json",
+    save: bool = False,
+) -> None:
+    """Visualize comparison between different postfilter options.
+
+    Args:
+        filename: JSON file containing comparison results
+        save: If True, save plot to PDF. If False, display interactively.
+    """
+
+    # Load results
+    load_path = Path(filename)
+    if not load_path.is_absolute():
+        load_path = DATA_DIR / "experiment" / filename
+
+    with open(load_path, encoding="utf-8") as f:
+        results = json.load(f)
+
+    # Organize data by dataset and postfilter
+    data = {}
+    for r in results:
+        dataset = r["dataset"]
+        postfilter = r["algorithm_params"].get("postfilter", None)
+        postfilter_label = postfilter if postfilter else "None"
+
+        if dataset not in data:
+            data[dataset] = {}
+        data[dataset][postfilter_label] = {
+            "success_rate": r["success_rate"],
+            "processing_time": r["processing_time"],
+        }
+
+    # Plot comparison
+    fig, (ax1, ax2) = plt.subplots(1, 2, figsize=(14, 6))
+
+    datasets = list(data.keys())
+    postfilters = ["None", "gaussian", "median"]
+    postfilter_labels = ["No Filter", "Gaussian", "Median"]
+
+    # Success rate comparison
+    x = range(len(datasets))
+    width = 0.25
+
+    # Color scheme: blue gradient for different filters
+    colors = {
+        "None": "#2E86AB",  # Deep blue
+        "gaussian": "#06A77D",  # Teal
+        "median": "#A23B72",  # Purple
+    }
+
+    bars_list = []
+    for i, (postfilter, label) in enumerate(zip(postfilters, postfilter_labels)):
+        rates = [data[ds].get(postfilter, {}).get("success_rate", 0) for ds in datasets]
+
+        bars = ax1.bar(
+            [pos + (i - 1) * width for pos in x],
+            rates,
+            width,
+            label=label,
+            color=colors[postfilter],
+            alpha=0.85,
+            edgecolor="white",
+            linewidth=1.5,
+        )
+        bars_list.append(bars)
+
+        # Add value labels
+        for bar in bars:
+            height = bar.get_height()
+            ax1.text(
+                bar.get_x() + bar.get_width() / 2.0,
+                height,
+                f"{height:.1f}%",
+                ha="center",
+                va="bottom",
+                fontsize=9,
+                fontweight="bold",
+            )
+
+    ax1.set_xlabel("Dataset", fontsize=12, fontweight="bold")
+    ax1.set_ylabel("Detection Success Rate (%)", fontsize=12, fontweight="bold")
+    ax1.set_title(
+        "Postfilter Comparison: Success Rate",
+        fontsize=14,
+        fontweight="bold",
+    )
+    ax1.set_xticks(x)
+    ax1.set_xticklabels([ds.replace("_", " ").title() for ds in datasets])
+    ax1.set_ylim(
+        0,
+        max(
+            [
+                max(data[ds].get(pf, {}).get("success_rate", 0) for pf in postfilters)
+                for ds in datasets
+            ]
+        )
+        * 1.15,
+    )
+    ax1.legend(framealpha=0.9, edgecolor="gray", fontsize=10)
+    ax1.grid(axis="y", alpha=0.3, linestyle="--")
+
+    # Processing time comparison
+    bars_list = []
+    for i, (postfilter, label) in enumerate(zip(postfilters, postfilter_labels)):
+        times = [
+            data[ds].get(postfilter, {}).get("processing_time", 0) for ds in datasets
+        ]
+
+        bars = ax2.bar(
+            [pos + (i - 1) * width for pos in x],
+            times,
+            width,
+            label=label,
+            color=colors[postfilter],
+            alpha=0.85,
+            edgecolor="white",
+            linewidth=1.5,
+        )
+        bars_list.append(bars)
+
+        # Add value labels
+        for bar in bars:
+            height = bar.get_height()
+            ax2.text(
+                bar.get_x() + bar.get_width() / 2.0,
+                height,
+                f"{height:.2f}s",
+                ha="center",
+                va="bottom",
+                fontsize=9,
+                fontweight="bold",
+            )
+
+    ax2.set_xlabel("Dataset", fontsize=12, fontweight="bold")
+    ax2.set_ylabel("Processing Time (seconds)", fontsize=12, fontweight="bold")
+    ax2.set_title(
+        "Postfilter Comparison: Processing Time",
+        fontsize=14,
+        fontweight="bold",
+    )
+    ax2.set_xticks(x)
+    ax2.set_xticklabels([ds.replace("_", " ").title() for ds in datasets])
+    ax2.legend(framealpha=0.9, edgecolor="gray", fontsize=10)
+    ax2.grid(axis="y", alpha=0.3, linestyle="--")
+
+    # Add overall title
+    fig.suptitle(
+        "Retinex Postfilter Comparison: None vs Gaussian vs Median",
+        fontsize=15,
+        fontweight="bold",
+        y=1.00,
+    )
+
+    plt.tight_layout()
+
+    if save:
+        save_path = (
+            IMAGES_DIR / "experiment" / "display_data" / "postfilter_comparison.pdf"
+        )
+        plt.savefig(save_path, dpi=300, bbox_inches="tight")
+        print(f"\n✓ Plot saved to: {save_path}")
+    else:
+        plt.show()
+
+
+def visualize_retinex_parameter_space(
+    filenames: dict[str, str] | None = None,
+    save: bool = False,
+) -> None:
+    """Visualize Retinex parameter space: log/linear × prefilter × normalize.
+
+    Shows comprehensive comparison of 8 parameter combinations:
+    - use_log_scale: Log vs Linear
+    - prefilter: Gaussian vs None
+    - smart_normalize: gain_compensation vs cv2.normalize
+
+    Args:
+        filenames: Dict mapping parameter combinations to JSON files:
+            - "linear_no_filter": smart_normalize_comparison.json
+            - "linear_with_filter": smart_normalize_linear_prefilter.json
+            - "log_no_filter": smart_normalize_log_scale_comparison.json
+            - "log_with_filter": smart_normalize_log_prefilter.json
+        save: If True, save plot to PDF. If False, display interactively.
+    """
+    from pathlib import Path
+
+    # Default filenames
+    if filenames is None:
+        filenames = {
+            "linear_no_filter": "smart_normalize_comparison.json",
+            "linear_with_filter": "smart_normalize_linear_prefilter.json",
+            "log_no_filter": "smart_normalize_log_scale_comparison.json",
+            "log_with_filter": "smart_normalize_log_prefilter.json",
+        }
+
+    # Load all data
+    all_data = {}
+    for key, filename in filenames.items():
+        load_path = Path(filename)
+        if not load_path.is_absolute():
+            load_path = DATA_DIR / "experiment" / filename
+
+        with open(load_path, encoding="utf-8") as f:
+            all_data[key] = json.load(f)
+
+    # Organize data: data[dataset][scale][prefilter][normalize] = {rate, time}
+    organized = {}
+
+    for config_key, results in all_data.items():
+        # Parse config key
+        if "linear" in config_key:
+            scale = "Linear"
+        else:
+            scale = "Log"
+
+        has_filter = "with_filter" in config_key
+
+        for result in results:
+            dataset = result["dataset"]
+            use_smart = result["algorithm_params"].get("smart_normalize", False)
+            normalize = "gain_compensation" if use_smart else "cv2.normalize"
+            prefilter = "Gaussian" if has_filter else "None"
+
+            if dataset not in organized:
+                organized[dataset] = {}
+            if scale not in organized[dataset]:
+                organized[dataset][scale] = {}
+            if prefilter not in organized[dataset][scale]:
+                organized[dataset][scale][prefilter] = {}
+
+            organized[dataset][scale][prefilter][normalize] = {
+                "success_rate": result["success_rate"],
+                "processing_time": result["processing_time"],
+            }
+
+    # Create 2x2 subplot grid
+    fig, axes = plt.subplots(2, 2, figsize=(16, 10))
+    fig.suptitle(
+        "Retinex Parameter Space Analysis: Log/Linear × Prefilter × Normalization",
+        fontsize=16,
+        fontweight="bold",
+        y=0.98,
+    )
+
+    datasets = ["low_light", "non_uniform"]
+    dataset_labels = ["Low Light", "Non-Uniform"]
+    scales = ["Linear", "Log"]
+
+    # Color scheme: prefilter (shape) × normalize (color)
+    colors = {
+        ("None", "cv2.normalize"): "#2E86AB",  # Deep blue
+        ("None", "gain_compensation"): "#06A77D",  # Teal
+        ("Gaussian", "cv2.normalize"): "#D81159",  # Red
+        ("Gaussian", "gain_compensation"): "#8F2D56",  # Purple
+    }
+
+    patterns = {
+        "None": "",  # Solid
+        "Gaussian": "///",  # Diagonal lines
+    }
+
+    # Plot success rates (top row)
+    for col, dataset in enumerate(datasets):
+        ax = axes[0, col]
+        x_positions = range(len(scales))
+        width = 0.18
+        offsets = [-1.5 * width, -0.5 * width, 0.5 * width, 1.5 * width]
+
+        # Plot 4 bars for each scale
+        for i, (prefilter, normalize) in enumerate(
+            [
+                ("None", "cv2.normalize"),
+                ("None", "gain_compensation"),
+                ("Gaussian", "cv2.normalize"),
+                ("Gaussian", "gain_compensation"),
+            ]
+        ):
+            rates = []
+            for scale in scales:
+                try:
+                    rate = organized[dataset][scale][prefilter][normalize][
+                        "success_rate"
+                    ]
+                except KeyError:
+                    rate = 0
+                rates.append(rate)
+
+            # Create descriptive label
+            if prefilter == "None":
+                prefilter_label = "No Prefilter"
+            else:
+                prefilter_label = f"{prefilter} Prefilter"
+
+            if normalize == "cv2.normalize":
+                normalize_label = "cv2.normalize"
+            else:
+                normalize_label = "Smart Normalize"
+
+            label = f"{prefilter_label} + {normalize_label}"
+
+            bars = ax.bar(
+                [x + offsets[i] for x in x_positions],
+                rates,
+                width,
+                label=label,
+                color=colors[(prefilter, normalize)],
+                alpha=0.85,
+                edgecolor="white",
+                linewidth=1.5,
+                hatch=patterns[prefilter],
+            )
+
+            # Add value labels
+            for bar, rate in zip(bars, rates):
+                ax.text(
+                    bar.get_x() + bar.get_width() / 2.0,
+                    bar.get_height() + 1,
+                    f"{rate:.1f}",
+                    ha="center",
+                    va="bottom",
+                    fontsize=8,
+                    fontweight="bold",
+                )
+
+        ax.set_xlabel("Retinex Scale", fontsize=11, fontweight="bold")
+        ax.set_ylabel("Success Rate (%)", fontsize=11, fontweight="bold")
+        ax.set_title(f"{dataset_labels[col]} Dataset", fontsize=12, fontweight="bold")
+        ax.set_xticks(x_positions)
+        ax.set_xticklabels(scales)
+        ax.set_ylim(0, 85)
+        ax.grid(axis="y", alpha=0.3, linestyle="--")
+
+        # Add legend to the first subplot (Low Light) where there's plenty of space
+        if col == 0:
+            ax.legend(
+                fontsize=9,
+                frameon=True,
+                framealpha=0.95,
+                edgecolor="gray",
+                loc="upper left",
+                title="Parameter Combinations",
+                title_fontsize=10,
+            )
+
+    # Plot processing times (bottom row)
+    for col, dataset in enumerate(datasets):
+        ax = axes[1, col]
+        x_positions = range(len(scales))
+
+        for i, (prefilter, normalize) in enumerate(
+            [
+                ("None", "cv2.normalize"),
+                ("None", "gain_compensation"),
+                ("Gaussian", "cv2.normalize"),
+                ("Gaussian", "gain_compensation"),
+            ]
+        ):
+            times = []
+            for scale in scales:
+                try:
+                    time = organized[dataset][scale][prefilter][normalize][
+                        "processing_time"
+                    ]
+                except KeyError:
+                    time = 0
+                times.append(time)
+
+            # Create descriptive label
+            if prefilter == "None":
+                prefilter_label = "No Prefilter"
+            else:
+                prefilter_label = f"{prefilter} Prefilter"
+
+            if normalize == "cv2.normalize":
+                normalize_label = "cv2.normalize"
+            else:
+                normalize_label = "Smart Normalize"
+
+            label = f"{prefilter_label} + {normalize_label}"
+
+            bars = ax.bar(
+                [x + offsets[i] for x in x_positions],
+                times,
+                width,
+                label=label,
+                color=colors[(prefilter, normalize)],
+                alpha=0.85,
+                edgecolor="white",
+                linewidth=1.5,
+                hatch=patterns[prefilter],
+            )
+
+            # Add value labels
+            for bar, time in zip(bars, times):
+                ax.text(
+                    bar.get_x() + bar.get_width() / 2.0,
+                    bar.get_height() + 0.2,
+                    f"{time:.1f}",
+                    ha="center",
+                    va="bottom",
+                    fontsize=8,
+                )
+
+        ax.set_xlabel("Retinex Scale", fontsize=11, fontweight="bold")
+        ax.set_ylabel("Processing Time (s)", fontsize=11, fontweight="bold")
+        ax.set_xticks(x_positions)
+        ax.set_xticklabels(scales)
+        ax.grid(axis="y", alpha=0.3, linestyle="--")
+
+    plt.tight_layout()
+
+    if save:
+        save_path = (
+            IMAGES_DIR / "experiment" / "display_data" / "retinex_parameter_space.pdf"
+        )
+        plt.savefig(save_path, dpi=300, bbox_inches="tight")
+        print(f"\n✓ Parameter space plot saved to: {save_path}")
     else:
         plt.show()

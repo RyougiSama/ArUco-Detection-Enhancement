@@ -180,6 +180,23 @@ class RetinexPreprocess:
         return result
 
 
+def optimal_algorithm() -> PreprocessAlgorithm:
+    """Get optimal preprocessing algorithm for ArUco detection.
+
+    Returns:
+        Optimal preprocessing algorithm instance
+    """
+    return RetinexPreprocess(
+        sigma=80,
+        use_log_scale=True,
+        smart_normalize=True,
+        prefilter="gaussian",
+        postfilter="median",
+        prefilter_params={"ksize": (5, 5), "sigma": 0},
+        postfilter_params={"ksize": 5},
+    )
+
+
 # Algorithm registry
 ALGORITHMS: dict[str, type[PreprocessAlgorithm]] = {
     "none": NoPreprocess,
@@ -210,9 +227,7 @@ def get_algorithm(
         )
 
     algo_class = ALGORITHMS[name]
-    return algo_class(
-        **kwargs,
-    )
+    return algo_class(**kwargs)
 
 
 def list_algorithms() -> list[str]:
