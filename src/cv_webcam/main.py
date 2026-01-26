@@ -80,7 +80,7 @@ def main() -> None:
     cv_webcam.init_app()
 
     # Option 1: Run comprehensive evaluation with plots
-    if True:
+    if False:
         experiment.run_experiment()
 
     # Option 2: Test single algorithm configuration
@@ -113,7 +113,7 @@ def main() -> None:
         make_baseline_imgs("https://192.168.0.103:8080/video")
 
     # Option 6: Generate degraded datasets
-    if False:
+    if True:
         dataset_generator.generate_dataset()
 
     # Option 7: Compare Gaussian vs Bilateral prefilter with Retinex

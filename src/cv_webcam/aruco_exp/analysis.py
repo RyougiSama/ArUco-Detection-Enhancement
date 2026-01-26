@@ -7,6 +7,7 @@ from cv2.typing import MatLike
 from matplotlib.axes import Axes
 from scipy.stats import kurtosis
 
+from cv_webcam import IMAGES_DIR
 from cv_webcam.core.img_prep import gain_compensation, single_scale_retinex
 
 
@@ -75,7 +76,7 @@ def _add_distribution_plot(
     ax.grid(axis="y", alpha=0.3, linestyle="--")
 
 
-def show_retinex_distribution(img: MatLike) -> None:
+def show_retinex_distribution(img: MatLike, save: bool = False) -> None:
     """Analyze and visualize Retinex algorithm data distributions.
 
     Shows three figures comparing different normalization strategies:
@@ -165,8 +166,25 @@ def show_retinex_distribution(img: MatLike) -> None:
             )
 
         plt.tight_layout()
+        if save:
+            filename = (
+                "distribution_"
+                + group["title"]
+                .lower()
+                .replace(" ", "_")
+                .replace("(", "")
+                .replace(")", "")
+                + ".pdf"
+            )
+            plt.savefig(
+                IMAGES_DIR / "experiment" / "display_data" / filename,
+                dpi=300,
+                bbox_inches="tight",
+            )
+            print(f"Figure saved as: {filename}")
 
-    plt.show()
+    if not save:
+        plt.show()
 
 
 def identify_noise(image: MatLike) -> str:

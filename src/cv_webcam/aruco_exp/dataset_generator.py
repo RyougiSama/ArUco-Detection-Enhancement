@@ -22,21 +22,28 @@ def add_gussian_noise(img: MatLike, sigma: float) -> MatLike:
     return img_noisy
 
 
-dark_level_dict = {
-    0: [2, 0.04],
-    1: [3, 0.06],
-    2: [4, 0.08],
-    3: [5, 0.10],
-}
+gammas = np.linspace(1.5, 5.0, 10)
+noises = np.linspace(0.02, 0.10, 10)
+
+DARK_LEVEL_DICT = {}
+for i in range(10):
+    DARK_LEVEL_DICT[i] = [round(gammas[i], 2), round(noises[i], 3)]
+
+# DARK_LEVEL_DICT = {
+#     0: [2, 0.04],
+#     1: [3, 0.06],
+#     2: [4, 0.08],
+#     3: [5, 0.10],
+# }
 
 
-def generate_dark_img(img: MatLike, level: int):
-    img = gamma_correction(img, dark_level_dict[level][0])
-    img = add_gussian_noise(img, dark_level_dict[level][1])
+def generate_dark_img(img: MatLike, level: int) -> MatLike:
+    img = gamma_correction(img, DARK_LEVEL_DICT[level][0])
+    img = add_gussian_noise(img, DARK_LEVEL_DICT[level][1])
     return img
 
 
-def generate_dark_dataset():
+def generate_dark_dataset() -> None:
     raw_imgs_path = IMAGES_DIR / "experiment" / "raw"
     raw_img_names = [
         img_name for img_name in raw_imgs_path.rglob("*.png") if img_name.is_file()
@@ -44,7 +51,7 @@ def generate_dark_dataset():
     save_path = IMAGES_DIR / "experiment" / "low_light"
     save_path.mkdir(parents=True, exist_ok=True)
 
-    for lv in range(4):
+    for lv in range(len(DARK_LEVEL_DICT)):
         for img_name in raw_img_names:
             img = cv2.imread(str(img_name))
             assert img is not None
@@ -58,6 +65,7 @@ def create_gaussian_illumination_map(
     center: tuple[int, int],
     sigma: float,
     center_intensity: float = 1.0,
+    min_intensity: float = 0.2,
 ) -> np.ndarray:
     if sigma <= 0 or center_intensity <= 0:
         raise ValueError("sigma and center_intensity must be greater than 0")
@@ -71,7 +79,8 @@ def create_gaussian_illumination_map(
     dy = y - center[1]
     distance_sq = dx**2 + dy**2
 
-    illumination_map = center_intensity * np.exp(-distance_sq / (2.0 * sigma**2))
+    gauss_mask = np.exp(-distance_sq / (2.0 * sigma**2))
+    illumination_map = min_intensity + (center_intensity - min_intensity) * gauss_mask
     return illumination_map
 
 
@@ -98,7 +107,7 @@ def apply_illumination(
     return result
 
 
-def generate_non_uniform_illumination_dataset():
+def generate_non_uniform_illumination_dataset() -> None:
     raw_imgs_path = IMAGES_DIR / "experiment" / "raw"
     raw_img_names = [
         img_name for img_name in raw_imgs_path.rglob("*.png") if img_name.is_file()
@@ -111,24 +120,33 @@ def generate_non_uniform_illumination_dataset():
         img = cv2.imread(str(img_name))
         assert img is not None
 
-        center = (
-            np.random.randint(0, img.shape[1]),
-            np.random.randint(0, img.shape[0]),
-        )
-        sigma_list = [300, 500, 700]
+        sigma_levels = [200, 350, 500, 650, 800]
+        intensity_levels = [0.6, 1.4]
 
-        for sigma in sigma_list:
-            illumination_map = create_gaussian_illumination_map(
-                img.shape, center, sigma, center_intensity=1.2
-            )
+        for sigma in sigma_levels:
+            for center_intensity in intensity_levels:
+                center = (
+                    np.random.randint(0, img.shape[1]),
+                    np.random.randint(0, img.shape[0]),
+                )
 
-            illum_img = apply_illumination(img, illumination_map, 0.8)
+                illumination_map = create_gaussian_illumination_map(
+                    img.shape,
+                    center,
+                    sigma,
+                    center_intensity=center_intensity,
+                    min_intensity=0.05,
+                )
 
-            save_filepath = save_path / f"{img_name.stem}_sigma{sigma}.png"
-            cv2.imwrite(str(save_filepath), illum_img)
+                illum_img = apply_illumination(img, illumination_map)
+
+                save_filepath = (
+                    save_path / f"{img_name.stem}_sig{sigma}_ci{center_intensity}.png"
+                )
+                cv2.imwrite(str(save_filepath), illum_img)
 
 
-def generate_dataset():
+def generate_dataset() -> None:
     """Generate datasets with different lighting conditions."""
     generate_dark_dataset()
     generate_non_uniform_illumination_dataset()

@@ -262,7 +262,7 @@ def plot_results(save: bool = False) -> None:
 
 def visualize_test() -> None:
     """Visualize algorithm comparison on a single image."""
-    img_path = IMAGES_DIR / "experiment" / "low_light" / "img_0_dark_lv3.png"
+    img_path = IMAGES_DIR / "experiment" / "low_light" / "img_0_dark_lv2.png"
     img = cv2.imread(str(img_path), cv2.IMREAD_GRAYSCALE)
     assert img is not None
 
@@ -293,11 +293,11 @@ def visualize_test() -> None:
         cv2.imshow("Retinex Image 3", retinex_img_3)
         cv2.waitKey(0)
         cv2.destroyAllWindows()
-    if False:
+    if True:
         from .analysis import show_retinex_distribution
 
-        show_retinex_distribution(img)
-    if True:
+        show_retinex_distribution(img, save=True)
+    if False:
         import numpy as np
 
         from cv_webcam.core import img_prep
@@ -960,9 +960,9 @@ def run_experiment() -> None:
             filename="smart_normalize_log_prefilter.json", save=True
         )
 
-    if False:
-        # visualize_test()
-        visualizer.visualize_retinex_parameter_space(save=True)
+    if True:
+        visualize_test()
+        # visualizer.visualize_retinex_parameter_space(save=True)
 
     if False:
         # Compare prefilter options
@@ -986,7 +986,7 @@ def run_experiment() -> None:
             filename="retinex_decomposition_comparison_change_order.json", save=True
         )
 
-    if True:
+    if False:
         compare_scale_factor(filename="scale_factor_comparison_ssr_downsample.json")
         visualizer.visualize_scale_factor_comparison(
             filename="scale_factor_comparison_ssr_downsample.json", save=True
