@@ -32,12 +32,12 @@ def apply_filter(
 
     match filter_type:
         case "gaussian":
-            ksize = params.get("ksize", (3, 3))
+            ksize = params.get("ksize", (5, 5))
             sigma = params.get("sigma", 0)
             return cv2.GaussianBlur(img, ksize, sigma)
 
         case "median":
-            ksize = params.get("ksize", 5)
+            ksize = params.get("ksize", 3)
             return cv2.medianBlur(img, ksize)
 
         case "bilateral":
@@ -225,10 +225,12 @@ def optimal_algorithm() -> PreprocessAlgorithm:
         sigma=80,
         use_log_scale=True,
         smart_normalize=True,
+        decomposition_method="ssr_downsample",
+        scale_factor=0.1,
         prefilter="gaussian",
         postfilter="median",
         prefilter_params={"ksize": (5, 5), "sigma": 0},
-        postfilter_params={"ksize": 5},
+        postfilter_params={"ksize": 3},
     )
 
 

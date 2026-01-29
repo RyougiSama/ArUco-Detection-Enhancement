@@ -729,7 +729,11 @@ def visualize_prefilter_comparison(
     filename: str = "prefilter_comparison.json",
     save: bool = False,
 ) -> None:
-    """Visualize comparison of different prefilters.
+    """Visualize comparison of different prefilters for Retinex algorithm.
+
+    Creates grouped bar charts showing:
+    (a) Detection success rates for each dataset and overall
+    (b) Average processing times for each dataset
 
     Args:
         filename: JSON file containing comparison results
@@ -747,9 +751,15 @@ def visualize_prefilter_comparison(
 
     # Organize data by prefilter and dataset
     data = {}
+    prefilter_order = []
     for r in results:
         prefilter = r["algorithm_params"].get("prefilter", None)
         prefilter_label = prefilter if prefilter else "None"
+
+        # Keep track of order
+        if prefilter_label not in prefilter_order:
+            prefilter_order.append(prefilter_label)
+
         dataset = r["dataset"]
 
         if prefilter_label not in data:
@@ -760,137 +770,162 @@ def visualize_prefilter_comparison(
             "processing_time": r["processing_time"],
         }
 
-    # Create visualization
-    fig, (ax1, ax2) = plt.subplots(1, 2, figsize=(14, 6))
+    # Calculate overall statistics
+    overall_data = {}
+    for prefilter in prefilter_order:
+        total_success = sum(
+            data[prefilter].get(ds, {}).get("success_rate", 0)
+            * (320 if ds == "low_light" else 320)  # Assuming 320 images per dataset
+            for ds in ["low_light", "non_uniform"]
+        )
+        overall_data[prefilter] = total_success / 640  # Total images
 
-    prefilters = list(data.keys())
-    datasets = ["low_light", "non_uniform"]
+    # Prepare data
+    prefilters = prefilter_order
+    prefilter_labels = [pf.upper() if pf != "None" else "NONE" for pf in prefilters]
 
-    x = range(len(datasets))
-    width = 0.25  # Adjusted for 3 bars
+    dataset_labels = {"low_light": "Low-light", "non_uniform": "Non-uniform"}
 
-    # Color scheme for prefilters
-    prefilter_colors = {
-        "None": "#2E86AB",  # Deep blue
-        "gaussian": "#06A77D",  # Teal
-        "median": "#A23B72",  # Purple
+    # Extract success rates
+    success_data = {
+        "low_light": [
+            data[pf].get("low_light", {}).get("success_rate", 0) for pf in prefilters
+        ],
+        "non_uniform": [
+            data[pf].get("non_uniform", {}).get("success_rate", 0) for pf in prefilters
+        ],
+        "overall": [overall_data[pf] for pf in prefilters],
     }
 
-    # Success rate comparison
-    for idx, prefilter in enumerate(prefilters):
-        rates = [data[prefilter].get(ds, {}).get("success_rate", 0) for ds in datasets]
-        offset = (idx - len(prefilters) / 2 + 0.5) * width
+    # Extract processing times
+    time_data = {
+        "low_light": [
+            data[pf].get("low_light", {}).get("processing_time", 0) for pf in prefilters
+        ],
+        "non_uniform": [
+            data[pf].get("non_uniform", {}).get("processing_time", 0)
+            for pf in prefilters
+        ],
+    }
 
-        # Get color based on prefilter name
-        color = prefilter_colors.get(
-            prefilter, prefilter_colors.get(prefilter.lower(), "#6A4C93")
-        )
+    # Create figure with two subplots
+    fig, (ax1, ax2) = plt.subplots(1, 2, figsize=(7, 3.5))
 
-        bars = ax1.bar(
-            [i + offset for i in x],
-            rates,
-            width,
-            label=prefilter.title() if prefilter != "None" else "No Prefilter",
-            color=color,
-            alpha=0.85,
-            edgecolor="white",
-            linewidth=1.5,
-        )
+    # Bar width and positions
+    bar_width = 0.25
+    x = np.arange(len(prefilters))
 
-        # Add value labels
+    # Color schemes - Different for each subplot
+    # Success rate: Cool colors (blues and purples)
+    success_colors = {
+        "low_light": "#5B7C99",  # Steel blue
+        "non_uniform": "#7B9FAB",  # Powder blue
+        "overall": "#6B6B6B",  # Gray
+    }
+
+    # Processing time: Warm colors (oranges and corals)
+    time_colors = {
+        "low_light": "#D97642",  # Burnt orange
+        "non_uniform": "#F0A868",  # Sandy brown
+    }
+
+    # Plot (a) - Success Rates
+    bars1 = ax1.bar(
+        x - bar_width,
+        success_data["low_light"],
+        bar_width,
+        label=dataset_labels["low_light"],
+        color=success_colors["low_light"],
+        alpha=0.9,
+    )
+    bars2 = ax1.bar(
+        x,
+        success_data["non_uniform"],
+        bar_width,
+        label=dataset_labels["non_uniform"],
+        color=success_colors["non_uniform"],
+        alpha=0.9,
+    )
+    bars3 = ax1.bar(
+        x + bar_width,
+        success_data["overall"],
+        bar_width,
+        label="Overall",
+        color=success_colors["overall"],
+        alpha=0.9,
+    )
+
+    # Add value labels on bars
+    for bars in [bars1, bars2, bars3]:
         for bar in bars:
             height = bar.get_height()
             ax1.text(
                 bar.get_x() + bar.get_width() / 2.0,
-                height + 1,
-                f"{height:.1f}%",
+                height,
+                f"{height:.1f}",
                 ha="center",
                 va="bottom",
-                fontsize=9,
-                fontweight="bold",
+                fontsize=6,
             )
 
-    ax1.set_xlabel("Dataset", fontsize=12, fontweight="bold")
-    ax1.set_ylabel("Detection Success Rate (%)", fontsize=12, fontweight="bold")
-    ax1.set_title("Prefilter Comparison: Success Rate", fontsize=14, fontweight="bold")
+    ax1.set_xlabel("Prefilter", fontsize=8)
+    ax1.set_ylabel("Detection Success Rate (%)", fontsize=8)
+    ax1.set_title("(a) Detection Success Rate", fontsize=9, pad=8)
     ax1.set_xticks(x)
-    ax1.set_xticklabels([ds.replace("_", " ").title() for ds in datasets])
-    ax1.set_ylim(
-        0,
-        max(
-            [
-                data[pf].get(ds, {}).get("success_rate", 0)
-                for pf in prefilters
-                for ds in datasets
-            ]
-        )
-        * 1.15,
+    ax1.set_xticklabels(prefilter_labels, fontsize=7)
+    ax1.legend(fontsize=7, loc="lower right", framealpha=0.9, edgecolor="gray")
+    ax1.tick_params(labelsize=7)
+    ax1.grid(True, alpha=0.2, linestyle="--", axis="y")
+    ax1.set_ylim(0, max(success_data["overall"]) * 1.33)
+
+    # Plot (b) - Processing Times
+    bars4 = ax2.bar(
+        x - bar_width / 2,
+        time_data["low_light"],
+        bar_width,
+        label=dataset_labels["low_light"],
+        color=time_colors["low_light"],
+        alpha=0.9,
     )
-    ax1.legend(framealpha=0.9, edgecolor="gray", fontsize=10)
-    ax1.grid(axis="y", alpha=0.3, linestyle="--")
+    bars5 = ax2.bar(
+        x + bar_width / 2,
+        time_data["non_uniform"],
+        bar_width,
+        label=dataset_labels["non_uniform"],
+        color=time_colors["non_uniform"],
+        alpha=0.9,
+    )
 
-    # Processing time comparison
-    for idx, prefilter in enumerate(prefilters):
-        times = [
-            data[prefilter].get(ds, {}).get("processing_time", 0) for ds in datasets
-        ]
-        offset = (idx - len(prefilters) / 2 + 0.5) * width
-
-        # Get color based on prefilter name
-        color = prefilter_colors.get(
-            prefilter, prefilter_colors.get(prefilter.lower(), "#6A4C93")
-        )
-
-        bars = ax2.bar(
-            [i + offset for i in x],
-            times,
-            width,
-            label=prefilter.title() if prefilter != "None" else "No Prefilter",
-            color=color,
-            alpha=0.85,
-            edgecolor="white",
-            linewidth=1.5,
-        )
-
-        # Add value labels
+    # Add value labels on bars
+    for bars in [bars4, bars5]:
         for bar in bars:
             height = bar.get_height()
             ax2.text(
                 bar.get_x() + bar.get_width() / 2.0,
-                height + 0.2,
-                f"{height:.2f}s",
+                height,
+                f"{height:.1f}",
                 ha="center",
                 va="bottom",
-                fontsize=9,
-                fontweight="bold",
+                fontsize=6,
             )
 
-    ax2.set_xlabel("Dataset", fontsize=12, fontweight="bold")
-    ax2.set_ylabel("Processing Time (seconds)", fontsize=12, fontweight="bold")
-    ax2.set_title(
-        "Prefilter Comparison: Processing Time", fontsize=14, fontweight="bold"
-    )
+    ax2.set_xlabel("Prefilter", fontsize=8)
+    ax2.set_ylabel("Processing Time (ms)", fontsize=8)
+    ax2.set_title("(b) Average Processing Time", fontsize=9, pad=8)
     ax2.set_xticks(x)
-    ax2.set_xticklabels([ds.replace("_", " ").title() for ds in datasets])
-    ax2.legend(framealpha=0.9, edgecolor="gray", fontsize=10)
-    ax2.grid(axis="y", alpha=0.3, linestyle="--")
-
-    # Add overall title
-    fig.suptitle(
-        "Retinex Prefilter Comparison: None vs Gaussian vs Median",
-        fontsize=15,
-        fontweight="bold",
-        y=1.00,
+    ax2.set_xticklabels(prefilter_labels, fontsize=7)
+    ax2.legend(fontsize=7, loc="upper left", framealpha=0.9, edgecolor="gray")
+    ax2.tick_params(labelsize=7)
+    ax2.grid(True, alpha=0.2, linestyle="--", axis="y")
+    ax2.set_ylim(
+        0, max(max(time_data["low_light"]), max(time_data["non_uniform"])) * 1.15
     )
 
-    plt.tight_layout()
+    plt.tight_layout(pad=1.5)
 
     if save:
         save_path = (
-            IMAGES_DIR
-            / "experiment"
-            / "display_data"
-            / filename.replace(".json", ".pdf")
+            IMAGES_DIR / "experiment" / "display_data" / "prefilter_comparison.pdf"
         )
         plt.savefig(save_path, dpi=300, bbox_inches="tight")
         print(f"\n✓ Plot saved to: {save_path}")
@@ -903,6 +938,10 @@ def visualize_smart_normalize_comparison(
     save: bool = False,
 ) -> None:
     """Visualize comparison between cv2.normalize and gain_compensation methods.
+
+    Creates grouped bar charts showing:
+    (a) Detection success rates for each dataset and overall
+    (b) Average processing times for each dataset
 
     Args:
         filename: JSON file containing comparison results
@@ -919,149 +958,175 @@ def visualize_smart_normalize_comparison(
 
     # Organize data by method and dataset
     data = {}
+    method_order = []
     for r in results:
         dataset = r["dataset"]
         use_smart = r["algorithm_params"].get("smart_normalize", False)
-        method = "gain_compensation" if use_smart else "cv2.normalize"
+        method = "clipped normalize" if use_smart else "normalize"
 
-        if dataset not in data:
-            data[dataset] = {}
-        data[dataset][method] = {
+        # Keep track of order
+        if method not in method_order:
+            method_order.append(method)
+
+        if method not in data:
+            data[method] = {}
+
+        data[method][dataset] = {
             "success_rate": r["success_rate"],
             "processing_time": r["processing_time"],
         }
 
-    # Plot comparison
-    fig, (ax1, ax2) = plt.subplots(1, 2, figsize=(14, 6))
+    # Calculate overall statistics
+    overall_data = {}
+    for method in method_order:
+        total_success = sum(
+            data[method].get(ds, {}).get("success_rate", 0)
+            * 320  # Assuming 320 images per dataset
+            for ds in ["low_light", "non_uniform"]
+        )
+        overall_data[method] = total_success / 640  # Total images
 
-    datasets = list(data.keys())
+    # Prepare data
+    methods = method_order
+    method_labels = methods
 
-    # Success rate comparison
-    x = range(len(datasets))
-    width = 0.35
+    dataset_labels = {"low_light": "Low-light", "non_uniform": "Non-uniform"}
 
-    cv2_rates = [
-        data[ds].get("cv2.normalize", {}).get("success_rate", 0) for ds in datasets
-    ]
-    smart_rates = [
-        data[ds].get("gain_compensation", {}).get("success_rate", 0) for ds in datasets
-    ]
+    # Extract success rates
+    success_data = {
+        "low_light": [
+            data[m].get("low_light", {}).get("success_rate", 0) for m in methods
+        ],
+        "non_uniform": [
+            data[m].get("non_uniform", {}).get("success_rate", 0) for m in methods
+        ],
+        "overall": [overall_data[m] for m in methods],
+    }
 
-    # Use cool colors (blue/green) for success rate
+    # Extract processing times
+    time_data = {
+        "low_light": [
+            data[m].get("low_light", {}).get("processing_time", 0) for m in methods
+        ],
+        "non_uniform": [
+            data[m].get("non_uniform", {}).get("processing_time", 0) for m in methods
+        ],
+    }
+
+    # Create figure with two subplots
+    fig, (ax1, ax2) = plt.subplots(1, 2, figsize=(7, 3.5))
+
+    # Bar width and positions
+    bar_width = 0.25
+    x = np.arange(len(methods))
+
+    # Color schemes - Different for each subplot
+    # Success rate: Cool colors (blues and purples)
+    success_colors = {
+        "low_light": "#5B7C99",  # Steel blue
+        "non_uniform": "#7B9FAB",  # Powder blue
+        "overall": "#6B6B6B",  # Gray
+    }
+
+    # Processing time: Warm colors (oranges and corals)
+    time_colors = {
+        "low_light": "#D97642",  # Burnt orange
+        "non_uniform": "#F0A868",  # Sandy brown
+    }
+
+    # Plot (a) - Success Rates
     bars1 = ax1.bar(
-        [i - width / 2 for i in x],
-        cv2_rates,
-        width,
-        label="cv2.normalize",
-        color="#2E86AB",  # Deep blue
-        alpha=0.85,
-        edgecolor="white",
-        linewidth=1.5,
+        x - bar_width,
+        success_data["low_light"],
+        bar_width,
+        label=dataset_labels["low_light"],
+        color=success_colors["low_light"],
+        alpha=0.9,
     )
     bars2 = ax1.bar(
-        [i + width / 2 for i in x],
-        smart_rates,
-        width,
-        label="gain_compensation",
-        color="#06A77D",  # Teal green
-        alpha=0.85,
-        edgecolor="white",
-        linewidth=1.5,
+        x,
+        success_data["non_uniform"],
+        bar_width,
+        label=dataset_labels["non_uniform"],
+        color=success_colors["non_uniform"],
+        alpha=0.9,
+    )
+    bars3 = ax1.bar(
+        x + bar_width,
+        success_data["overall"],
+        bar_width,
+        label="Overall",
+        color=success_colors["overall"],
+        alpha=0.9,
     )
 
-    # Add value labels
-    for bars in [bars1, bars2]:
+    # Add value labels on bars
+    for bars in [bars1, bars2, bars3]:
         for bar in bars:
             height = bar.get_height()
             ax1.text(
                 bar.get_x() + bar.get_width() / 2.0,
                 height,
-                f"{height:.1f}%",
+                f"{height:.1f}",
                 ha="center",
                 va="bottom",
-                fontsize=10,
-                fontweight="bold",
+                fontsize=6,
             )
 
-    ax1.set_xlabel("Dataset", fontsize=12, fontweight="bold")
-    ax1.set_ylabel("Detection Success Rate (%)", fontsize=12, fontweight="bold")
-    ax1.set_title(
-        "Normalization Method Comparison: Success Rate",
-        fontsize=14,
-        fontweight="bold",
-    )
+    ax1.set_xlabel("Normalization Method", fontsize=8)
+    ax1.set_ylabel("Detection Success Rate (%)", fontsize=8)
+    ax1.set_title("(a) Detection Success Rate", fontsize=9, pad=8)
     ax1.set_xticks(x)
-    ax1.set_xticklabels([ds.replace("_", " ").title() for ds in datasets])
-    ax1.set_ylim(0, 110)
-    ax1.legend(framealpha=0.9, edgecolor="gray", fontsize=10)
-    ax1.grid(axis="y", alpha=0.3, linestyle="--")
+    ax1.set_xticklabels(method_labels, fontsize=7)
+    ax1.legend(fontsize=7, loc="upper left", framealpha=0.9, edgecolor="gray")
+    ax1.tick_params(labelsize=7)
+    ax1.grid(True, alpha=0.2, linestyle="--", axis="y")
+    ax1.set_ylim(0, max(success_data["overall"]) * 1.33)
 
-    # Processing time comparison
-    cv2_times = [
-        data[ds].get("cv2.normalize", {}).get("processing_time", 0) for ds in datasets
-    ]
-    smart_times = [
-        data[ds].get("gain_compensation", {}).get("processing_time", 0)
-        for ds in datasets
-    ]
-
-    # Use warm colors (red/purple) for processing time
-    bars1 = ax2.bar(
-        [i - width / 2 for i in x],
-        cv2_times,
-        width,
-        label="cv2.normalize",
-        color="#D81159",  # Crimson red
-        alpha=0.85,
-        edgecolor="white",
-        linewidth=1.5,
+    # Plot (b) - Processing Times
+    bars4 = ax2.bar(
+        x - bar_width / 2,
+        time_data["low_light"],
+        bar_width,
+        label=dataset_labels["low_light"],
+        color=time_colors["low_light"],
+        alpha=0.9,
     )
-    bars2 = ax2.bar(
-        [i + width / 2 for i in x],
-        smart_times,
-        width,
-        label="gain_compensation",
-        color="#8F2D56",  # Deep purple
-        alpha=0.85,
-        edgecolor="white",
-        linewidth=1.5,
+    bars5 = ax2.bar(
+        x + bar_width / 2,
+        time_data["non_uniform"],
+        bar_width,
+        label=dataset_labels["non_uniform"],
+        color=time_colors["non_uniform"],
+        alpha=0.9,
     )
 
-    # Add value labels
-    for bars in [bars1, bars2]:
+    # Add value labels on bars
+    for bars in [bars4, bars5]:
         for bar in bars:
             height = bar.get_height()
             ax2.text(
                 bar.get_x() + bar.get_width() / 2.0,
                 height,
-                f"{height:.2f}s",
+                f"{height:.1f}",
                 ha="center",
                 va="bottom",
-                fontsize=10,
-                fontweight="bold",
+                fontsize=6,
             )
 
-    ax2.set_xlabel("Dataset", fontsize=12, fontweight="bold")
-    ax2.set_ylabel("Processing Time (seconds)", fontsize=12, fontweight="bold")
-    ax2.set_title(
-        "Normalization Method Comparison: Processing Time",
-        fontsize=14,
-        fontweight="bold",
-    )
+    ax2.set_xlabel("Normalization Method", fontsize=8)
+    ax2.set_ylabel("Processing Time (ms)", fontsize=8)
+    ax2.set_title("(b) Average Processing Time", fontsize=9, pad=8)
     ax2.set_xticks(x)
-    ax2.set_xticklabels([ds.replace("_", " ").title() for ds in datasets])
-    ax2.legend(framealpha=0.9, edgecolor="gray", fontsize=10)
-    ax2.grid(axis="y", alpha=0.3, linestyle="--")
-
-    # Add overall title
-    fig.suptitle(
-        "Retinex Smart Normalize Comparison: cv2.normalize vs gain_compensation",
-        fontsize=15,
-        fontweight="bold",
-        y=1.00,
+    ax2.set_xticklabels(method_labels, fontsize=7)
+    ax2.legend(fontsize=7, loc="lower right", framealpha=0.9, edgecolor="gray")
+    ax2.tick_params(labelsize=7)
+    ax2.grid(True, alpha=0.2, linestyle="--", axis="y")
+    ax2.set_ylim(
+        0, max(max(time_data["low_light"]), max(time_data["non_uniform"])) * 1.15
     )
 
-    plt.tight_layout()
+    plt.tight_layout(pad=1.5)
 
     if save:
         save_path = (
@@ -1082,6 +1147,10 @@ def visualize_postfilter_comparison(
 ) -> None:
     """Visualize comparison between different postfilter options.
 
+    Paper-ready format (3.5"×3.5", single plot):
+    - Success Rate comparison grouped by dataset + Overall average
+    - Font sizes: title=9pt, axis=8pt, tick=7pt, label=6pt
+
     Args:
         filename: JSON file containing comparison results
         save: If True, save plot to PDF. If False, display interactively.
@@ -1099,142 +1168,113 @@ def visualize_postfilter_comparison(
     data = {}
     for r in results:
         dataset = r["dataset"]
-        postfilter = r["algorithm_params"].get("postfilter", None)
-        postfilter_label = postfilter if postfilter else "None"
+        params = r["algorithm_params"]
+        postfilter = params.get("postfilter", None)
+
+        # Create label based on postfilter type and kernel size
+        if postfilter is None:
+            postfilter_label = "None"
+        else:
+            ksize = params.get("postfilter_params", {}).get("ksize", 5)
+            # Handle tuple, list, or int
+            if isinstance(ksize, (tuple, list)):
+                ksize = ksize[0]
+            postfilter_label = f"{postfilter.capitalize()}-{ksize}"
 
         if dataset not in data:
             data[dataset] = {}
-        data[dataset][postfilter_label] = {
-            "success_rate": r["success_rate"],
-            "processing_time": r["processing_time"],
-        }
+        data[dataset][postfilter_label] = r["success_rate"]
 
-    # Plot comparison
-    fig, (ax1, ax2) = plt.subplots(1, 2, figsize=(14, 6))
+    # Calculate overall average
+    postfilter_keys = list(next(iter(data.values())).keys())
+    overall_avg = {}
+    for pf in postfilter_keys:
+        rates = [data[ds][pf] for ds in data.keys()]
+        overall_avg[pf] = np.mean(rates)
 
-    datasets = list(data.keys())
-    postfilters = ["None", "gaussian", "median"]
-    postfilter_labels = ["No Filter", "Gaussian", "Median"]
+    # Create paper-ready figure (wider for 7 postfilter options)
+    fig, ax = plt.subplots(figsize=(6, 3.5))
 
-    # Success rate comparison
-    x = range(len(datasets))
-    width = 0.25
+    datasets = sorted(data.keys())
 
-    # Color scheme: blue gradient for different filters
-    colors = {
-        "None": "#2E86AB",  # Deep blue
-        "gaussian": "#06A77D",  # Teal
-        "median": "#A23B72",  # Purple
-    }
+    # Sort postfilters: None first, then by filter type and kernel size
+    def sort_key(pf):
+        if pf == "None":
+            return (0, 0)
+        parts = pf.split("-")
+        filter_type = 1 if parts[0] == "Gaussian" else 2
+        ksize = int(parts[1])
+        return (filter_type, ksize)
 
-    bars_list = []
-    for i, (postfilter, label) in enumerate(zip(postfilters, postfilter_labels)):
-        rates = [data[ds].get(postfilter, {}).get("success_rate", 0) for ds in datasets]
+    postfilters = sorted(postfilter_keys, key=sort_key)
 
-        bars = ax1.bar(
-            [pos + (i - 1) * width for pos in x],
+    # Prepare data for plotting
+    x = np.arange(len(postfilters))
+    width = 0.26  # Slightly wider bars for better visibility
+
+    # Colors: two datasets + overall (blue shades)
+    colors = ["#1976D2", "#0097A7", "#D32F2F"]  # Blue, Teal, Red for overall
+    labels = [ds.replace("_", " ").title() for ds in datasets] + ["Overall"]
+
+    max_rate = 0
+
+    # Plot bars for each dataset
+    for i, (dataset, color, label) in enumerate(
+        zip(datasets + ["overall"], colors, labels)
+    ):
+        if dataset == "overall":
+            rates = [overall_avg[pf] for pf in postfilters]
+        else:
+            rates = [data[dataset][pf] for pf in postfilters]
+
+        max_rate = max(max_rate, max(rates))
+
+        offset = (i - 1) * width
+        bars = ax.bar(
+            x + offset,
             rates,
             width,
             label=label,
-            color=colors[postfilter],
-            alpha=0.85,
+            color=color,
+            alpha=0.9,
             edgecolor="white",
-            linewidth=1.5,
+            linewidth=0.5,
         )
-        bars_list.append(bars)
 
         # Add value labels
         for bar in bars:
             height = bar.get_height()
-            ax1.text(
+            ax.text(
                 bar.get_x() + bar.get_width() / 2.0,
-                height,
-                f"{height:.1f}%",
+                height + 0.01 * max_rate,
+                f"{height:.1f}",
                 ha="center",
                 va="bottom",
-                fontsize=9,
-                fontweight="bold",
+                fontsize=6,
             )
 
-    ax1.set_xlabel("Dataset", fontsize=12, fontweight="bold")
-    ax1.set_ylabel("Detection Success Rate (%)", fontsize=12, fontweight="bold")
-    ax1.set_title(
+    ax.set_xlabel("Postfilter", fontsize=8)
+    ax.set_ylabel("Detection Success Rate (%)", fontsize=8)
+    ax.set_title(
         "Postfilter Comparison: Success Rate",
-        fontsize=14,
-        fontweight="bold",
+        fontsize=9,
+        pad=8,
     )
-    ax1.set_xticks(x)
-    ax1.set_xticklabels([ds.replace("_", " ").title() for ds in datasets])
-    ax1.set_ylim(
-        0,
-        max(
-            [
-                max(data[ds].get(pf, {}).get("success_rate", 0) for pf in postfilters)
-                for ds in datasets
-            ]
-        )
-        * 1.15,
-    )
-    ax1.legend(framealpha=0.9, edgecolor="gray", fontsize=10)
-    ax1.grid(axis="y", alpha=0.3, linestyle="--")
-
-    # Processing time comparison
-    bars_list = []
-    for i, (postfilter, label) in enumerate(zip(postfilters, postfilter_labels)):
-        times = [
-            data[ds].get(postfilter, {}).get("processing_time", 0) for ds in datasets
-        ]
-
-        bars = ax2.bar(
-            [pos + (i - 1) * width for pos in x],
-            times,
-            width,
-            label=label,
-            color=colors[postfilter],
-            alpha=0.85,
-            edgecolor="white",
-            linewidth=1.5,
-        )
-        bars_list.append(bars)
-
-        # Add value labels
-        for bar in bars:
-            height = bar.get_height()
-            ax2.text(
-                bar.get_x() + bar.get_width() / 2.0,
-                height,
-                f"{height:.2f}s",
-                ha="center",
-                va="bottom",
-                fontsize=9,
-                fontweight="bold",
-            )
-
-    ax2.set_xlabel("Dataset", fontsize=12, fontweight="bold")
-    ax2.set_ylabel("Processing Time (seconds)", fontsize=12, fontweight="bold")
-    ax2.set_title(
-        "Postfilter Comparison: Processing Time",
-        fontsize=14,
-        fontweight="bold",
-    )
-    ax2.set_xticks(x)
-    ax2.set_xticklabels([ds.replace("_", " ").title() for ds in datasets])
-    ax2.legend(framealpha=0.9, edgecolor="gray", fontsize=10)
-    ax2.grid(axis="y", alpha=0.3, linestyle="--")
-
-    # Add overall title
-    fig.suptitle(
-        "Retinex Postfilter Comparison: None vs Gaussian vs Median",
-        fontsize=15,
-        fontweight="bold",
-        y=1.00,
-    )
+    ax.set_xticks(x)
+    ax.set_xticklabels(postfilters, fontsize=7.5, rotation=15, ha="right")
+    ax.tick_params(axis="y", labelsize=7)
+    ax.set_ylim(0, max_rate * 1.3)
+    ax.legend(framealpha=0.9, edgecolor="gray", fontsize=7.5, loc="upper right")
+    ax.grid(axis="y", alpha=0.3, linestyle="--", linewidth=0.5)
 
     plt.tight_layout()
 
     if save:
         save_path = (
-            IMAGES_DIR / "experiment" / "display_data" / "postfilter_comparison.pdf"
+            IMAGES_DIR
+            / "experiment"
+            / "display_data"
+            / filename.replace(".json", ".pdf")
         )
         plt.savefig(save_path, dpi=300, bbox_inches="tight")
         print(f"\n✓ Plot saved to: {save_path}")
@@ -1427,7 +1467,16 @@ def visualize_scale_factor_comparison(
         load_path = DATA_DIR / "experiment" / filename
 
     with open(load_path, encoding="utf-8") as f:
-        results = json.load(f)
+        file_data = json.load(f)
+
+    # Check if file has baseline data (new format) or is old format
+    if isinstance(file_data, dict) and "downsampling_results" in file_data:
+        results = file_data["downsampling_results"]
+        baseline = file_data.get("baseline", {})
+    else:
+        # Old format: no baseline
+        results = file_data
+        baseline = {}
 
     # Organize data by dataset and scale factor
     data = {}
@@ -1442,11 +1491,20 @@ def visualize_scale_factor_comparison(
             "processing_time": r["processing_time"],
         }
 
-    # Create visualization with 2 subplots (vertical layout)
-    fig, (ax1, ax2) = plt.subplots(2, 1, figsize=(12, 10))
+    # Add baseline data as scale_factor = 1.0
+    if baseline:
+        for dataset in baseline.keys():
+            if dataset in data:
+                data[dataset][1.0] = {
+                    "success_rate": baseline[dataset]["success_rate"],
+                    "processing_time": baseline[dataset]["processing_time"],
+                }
+
+    # Create visualization with 2 subplots (vertical layout for paper format)
+    fig, (ax1, ax2) = plt.subplots(2, 1, figsize=(7, 6))
 
     datasets = list(data.keys())
-    dataset_labels = {"low_light": "Low Light", "non_uniform": "Non-Uniform"}
+    dataset_labels = {"low_light": "Low-light", "non_uniform": "Non-uniform"}
 
     # Color scheme for datasets
     colors = {
@@ -1465,107 +1523,687 @@ def visualize_scale_factor_comparison(
         "non_uniform": "s",
     }
 
+    # Baseline colors (contrasting colors for visibility)
+    baseline_colors = {
+        "low_light": "#E53935",  # Red
+        "non_uniform": "#FB8C00",  # Orange
+    }
+
     # Success rate comparison (top subplot)
+    # Use broken x-axis: plot 0.05-0.5 range, then separately plot 1.0 at position 0.55
+    all_rates = []
+
     for dataset in datasets:
         scale_factors = sorted(data[dataset].keys())
         rates = [data[dataset][sf]["success_rate"] for sf in scale_factors]
+        all_rates.extend(rates)
 
+        # Downsampling points (0.05-0.5)
+        downsampling_sf = [sf for sf in scale_factors if sf <= 0.5]
+        downsampling_rates = [
+            data[dataset][sf]["success_rate"] for sf in downsampling_sf
+        ]
+
+        # Plot downsampling curve
         ax1.plot(
-            scale_factors,
-            rates,
+            downsampling_sf,
+            downsampling_rates,
             label=dataset_labels[dataset],
             color=colors[dataset],
             linestyle=line_styles[dataset],
             marker=markers[dataset],
-            markersize=8,
-            linewidth=2.5,
-            markeredgewidth=1.5,
+            markersize=5,
+            linewidth=1.5,
+            markeredgewidth=1.0,
             markeredgecolor="white",
             alpha=0.85,
         )
 
-        # Add value labels
-        for sf, rate in zip(scale_factors, rates):
-            ax1.annotate(
-                f"{rate:.1f}%",
-                (sf, rate),
-                textcoords="offset points",
-                xytext=(0, 10),
-                ha="center",
-                fontsize=8,
-                fontweight="bold",
+        # Plot baseline point at x=0.55 (representing scale_factor=1.0)
+        if 1.0 in scale_factors:
+            baseline_rate = data[dataset][1.0]["success_rate"]
+            # Add dataset-specific baseline label
+            baseline_label = f"{dataset_labels[dataset]} (Baseline)"
+
+            ax1.plot(
+                [0.55],
+                [baseline_rate],
+                marker=markers[dataset],
+                markersize=5,
+                color=baseline_colors[dataset],
+                markeredgewidth=1.0,
+                markeredgecolor="white",
+                alpha=0.85,
+                linestyle="",
+                label=baseline_label,
+            )
+            # Dotted connection line from 0.5 to baseline
+            last_sf = max([sf for sf in scale_factors if sf <= 0.5])
+            last_rate = data[dataset][last_sf]["success_rate"]
+            ax1.plot(
+                [last_sf, 0.55],
+                [last_rate, baseline_rate],
                 color=colors[dataset],
+                linestyle=":",
+                linewidth=1.0,
+                alpha=0.3,
             )
 
-    ax1.set_xlabel("Scale Factor", fontsize=12, fontweight="bold")
-    ax1.set_ylabel("Detection Success Rate (%)", fontsize=12, fontweight="bold")
-    ax1.set_title(
-        "Scale Factor Impact on Success Rate",
-        fontsize=14,
-        fontweight="bold",
-        pad=15,
-    )
-    ax1.legend(framealpha=0.9, edgecolor="gray", fontsize=11, loc="best")
-    ax1.grid(True, alpha=0.3, linestyle="--")
-    ax1.set_xlim(min(scale_factors) - 0.02, max(scale_factors) + 0.02)
+    # Calculate y-axis range with margin
+    rate_min, rate_max = min(all_rates), max(all_rates)
+    rate_margin = (rate_max - rate_min) * 0.15
+    ax1.set_ylim(rate_min - rate_margin, rate_max + rate_margin)
 
+    # Add value labels for downsampling points
+    for dataset in datasets:
+        scale_factors = sorted(data[dataset].keys())
+        downsampling_sf = [sf for sf in scale_factors if sf <= 0.5]
+
+        for sf in downsampling_sf:
+            rate = data[dataset][sf]["success_rate"]
+            y_offset = 8 if dataset == "low_light" else -12
+            ax1.annotate(
+                f"{rate:.1f}",
+                (sf, rate),
+                textcoords="offset points",
+                xytext=(0, y_offset),
+                ha="center",
+                fontsize=6,
+                color=colors[dataset],
+                bbox=dict(
+                    boxstyle="round,pad=0.2",
+                    facecolor="white",
+                    alpha=0.7,
+                    edgecolor="none",
+                ),
+            )
+
+        # Add baseline label
+        if 1.0 in scale_factors:
+            baseline_rate = data[dataset][1.0]["success_rate"]
+            y_offset = 8 if dataset == "low_light" else -12
+            ax1.annotate(
+                f"{baseline_rate:.1f}",
+                (0.55, baseline_rate),
+                textcoords="offset points",
+                xytext=(0, y_offset),
+                ha="center",
+                fontsize=6,
+                color=baseline_colors[dataset],
+                bbox=dict(
+                    boxstyle="round,pad=0.2",
+                    facecolor="white",
+                    alpha=0.7,
+                    edgecolor="none",
+                ),
+            )
+
+    ax1.set_xlabel("Scale Factor", fontsize=8)
+    ax1.set_ylabel("Detection Success Rate (%)", fontsize=8)
+    ax1.set_title("(a) Detection Success Rate", fontsize=9, pad=8)
+    ax1.legend(
+        framealpha=0.95,
+        edgecolor="gray",
+        fontsize=6.5,
+        loc="center left",
+        ncol=2,
+    )
+    ax1.grid(True, alpha=0.2, linestyle="--")
+    # Set x-axis to show 0.05-0.55 (baseline at 0.55 represents 1.0)
+    ax1.set_xlim(0.03, 0.57)
+    # Custom x-ticks: last tick shows 1.0 instead of 0.55
+    ax1.set_xticks([0.05, 0.1, 0.15, 0.2, 0.25, 0.3, 0.35, 0.4, 0.45, 0.5, 0.55])
+    ax1.set_xticklabels(
+        [
+            "0.05",
+            "0.1",
+            "0.15",
+            "0.2",
+            "0.25",
+            "0.3",
+            "0.35",
+            "0.4",
+            "0.45",
+            "0.5",
+            "1.0",
+        ]
+    )
+    ax1.tick_params(labelsize=7)
+    # Add axis break indicator
+    ax1.axvline(x=0.525, color="gray", linestyle=":", linewidth=1, alpha=0.5)
+    ax1.text(
+        0.525,
+        rate_min - rate_margin * 0.7,
+        "...",
+        ha="center",
+        fontsize=8,
+        color="gray",
+    )
     # Processing time comparison (bottom subplot)
+    all_times = []
+
     for dataset in datasets:
         scale_factors = sorted(data[dataset].keys())
         times = [data[dataset][sf]["processing_time"] for sf in scale_factors]
+        all_times.extend(times)
 
+        # Downsampling points (0.05-0.5)
+        downsampling_sf = [sf for sf in scale_factors if sf <= 0.5]
+        downsampling_times = [
+            data[dataset][sf]["processing_time"] for sf in downsampling_sf
+        ]
+
+        # Plot downsampling curve
         ax2.plot(
-            scale_factors,
-            times,
+            downsampling_sf,
+            downsampling_times,
             label=dataset_labels[dataset],
             color=colors[dataset],
             linestyle=line_styles[dataset],
             marker=markers[dataset],
-            markersize=8,
-            linewidth=2.5,
-            markeredgewidth=1.5,
+            markersize=5,
+            linewidth=1.5,
+            markeredgewidth=1.0,
             markeredgecolor="white",
             alpha=0.85,
         )
 
-        # Add value labels
-        for sf, time in zip(scale_factors, times):
-            ax2.annotate(
-                f"{time:.2f}s",
-                (sf, time),
-                textcoords="offset points",
-                xytext=(0, 10),
-                ha="center",
-                fontsize=8,
-                fontweight="bold",
+        # Plot baseline point at x=0.55
+        if 1.0 in scale_factors:
+            baseline_time = data[dataset][1.0]["processing_time"]
+            # Add dataset-specific baseline label
+            baseline_label = f"{dataset_labels[dataset]} (Baseline)"
+
+            ax2.plot(
+                [0.55],
+                [baseline_time],
+                marker=markers[dataset],
+                markersize=5,
+                color=baseline_colors[dataset],
+                markeredgewidth=1.0,
+                markeredgecolor="white",
+                alpha=0.85,
+                linestyle="",
+                label=baseline_label,
+            )
+            # Dotted connection line
+            last_sf = max([sf for sf in scale_factors if sf <= 0.5])
+            last_time = data[dataset][last_sf]["processing_time"]
+            ax2.plot(
+                [last_sf, 0.55],
+                [last_time, baseline_time],
                 color=colors[dataset],
+                linestyle=":",
+                linewidth=1.0,
+                alpha=0.3,
             )
 
-    ax2.set_xlabel("Scale Factor", fontsize=12, fontweight="bold")
-    ax2.set_ylabel("Processing Time (seconds)", fontsize=12, fontweight="bold")
-    ax2.set_title(
-        "Scale Factor Impact on Processing Time",
-        fontsize=14,
-        fontweight="bold",
-        pad=15,
-    )
-    ax2.legend(framealpha=0.9, edgecolor="gray", fontsize=11, loc="best")
-    ax2.grid(True, alpha=0.3, linestyle="--")
-    ax2.set_xlim(min(scale_factors) - 0.02, max(scale_factors) + 0.02)
+    # Calculate y-axis range with margin
+    time_min, time_max = min(all_times), max(all_times)
+    time_margin = (time_max - time_min) * 0.15
+    ax2.set_ylim(time_min - time_margin, time_max + time_margin)
 
-    # Add overall title
-    fig.suptitle(
-        "SSR Downsampling: Scale Factor Optimization Analysis",
-        fontsize=16,
-        fontweight="bold",
-        y=0.995,
+    # Add value labels for downsampling points
+    for dataset in datasets:
+        scale_factors = sorted(data[dataset].keys())
+        downsampling_sf = [sf for sf in scale_factors if sf <= 0.5]
+
+        for sf in downsampling_sf:
+            time = data[dataset][sf]["processing_time"]
+            y_offset = 8 if dataset == "low_light" else -12
+            ax2.annotate(
+                f"{time:.1f}",
+                (sf, time),
+                textcoords="offset points",
+                xytext=(0, y_offset),
+                ha="center",
+                fontsize=6,
+                color=colors[dataset],
+                bbox=dict(
+                    boxstyle="round,pad=0.2",
+                    facecolor="white",
+                    alpha=0.7,
+                    edgecolor="none",
+                ),
+            )
+
+        # Add baseline label
+        if 1.0 in scale_factors:
+            baseline_time = data[dataset][1.0]["processing_time"]
+            y_offset = 8 if dataset == "low_light" else -12
+            ax2.annotate(
+                f"{baseline_time:.1f}",
+                (0.55, baseline_time),
+                textcoords="offset points",
+                xytext=(0, y_offset),
+                ha="center",
+                fontsize=6,
+                color=baseline_colors[dataset],
+                bbox=dict(
+                    boxstyle="round,pad=0.2",
+                    facecolor="white",
+                    alpha=0.7,
+                    edgecolor="none",
+                ),
+            )
+
+    ax2.set_xlabel("Scale Factor", fontsize=8)
+    ax2.set_ylabel("Processing Time (ms)", fontsize=8)
+    ax2.set_title("(b) Processing Time", fontsize=9, pad=8)
+    ax2.legend(
+        framealpha=0.95,
+        edgecolor="gray",
+        fontsize=6.5,
+        loc="upper left",
+        ncol=2,
+    )
+    ax2.grid(True, alpha=0.2, linestyle="--")
+    ax2.set_xlim(0.03, 0.57)
+    ax2.set_xticks([0.05, 0.1, 0.15, 0.2, 0.25, 0.3, 0.35, 0.4, 0.45, 0.5, 0.55])
+    ax2.set_xticklabels(
+        [
+            "0.05",
+            "0.1",
+            "0.15",
+            "0.2",
+            "0.25",
+            "0.3",
+            "0.35",
+            "0.4",
+            "0.45",
+            "0.5",
+            "1.0",
+        ]
+    )
+    ax2.tick_params(labelsize=7)
+    # Add axis break indicator
+    ax2.axvline(x=0.525, color="gray", linestyle=":", linewidth=1, alpha=0.5)
+    ax2.text(
+        0.525,
+        time_min - time_margin * 0.7,
+        "...",
+        ha="center",
+        fontsize=8,
+        color="gray",
     )
 
-    plt.tight_layout()
+    plt.tight_layout(pad=1.5)
 
     if save:
         save_path = (
             IMAGES_DIR / "experiment" / "display_data" / "scale_factor_comparison.pdf"
+        )
+        plt.savefig(save_path, dpi=300, bbox_inches="tight")
+        print(f"\n✓ Plot saved to: {save_path}")
+    else:
+        plt.show()
+
+
+def visualize_algorithm_overall_comparison(
+    filename: str = "algorithm_overall_comparison.json",
+    save: bool = False,
+) -> None:
+    """Visualize overall comparison of different algorithms across datasets.
+
+    Creates grouped bar charts showing:
+    (a) Detection success rates for each dataset and overall
+    (b) Average processing times for each dataset
+
+    Args:
+        filename: JSON file containing comparison results
+        save: If True, save plot to PDF. If False, display interactively.
+    """
+    # Load results
+    load_path = Path(filename)
+    if not load_path.is_absolute():
+        load_path = DATA_DIR / "experiment" / filename
+
+    with open(load_path, encoding="utf-8") as f:
+        data = json.load(f)
+
+    overall_stats = data["overall_statistics"]
+
+    # Prepare data
+    algorithms = list(overall_stats.keys())
+    algo_labels = [algo.upper() for algo in algorithms]
+
+    dataset_labels = {"low_light": "Low-light", "non_uniform": "Non-uniform"}
+
+    # Extract success rates
+    success_data = {
+        "low_light": [
+            overall_stats[algo]["dataset_results"]["low_light"]["success_rate"]
+            for algo in algorithms
+        ],
+        "non_uniform": [
+            overall_stats[algo]["dataset_results"]["non_uniform"]["success_rate"]
+            for algo in algorithms
+        ],
+        "overall": [overall_stats[algo]["overall_success_rate"] for algo in algorithms],
+    }
+
+    # Extract processing times
+    time_data = {
+        "low_light": [
+            overall_stats[algo]["dataset_results"]["low_light"]["processing_time"]
+            for algo in algorithms
+        ],
+        "non_uniform": [
+            overall_stats[algo]["dataset_results"]["non_uniform"]["processing_time"]
+            for algo in algorithms
+        ],
+    }
+
+    # Create figure with two subplots
+    fig, (ax1, ax2) = plt.subplots(1, 2, figsize=(7, 3.5))
+
+    # Bar width and positions
+    bar_width = 0.25
+    x = np.arange(len(algorithms))
+
+    # Color schemes - Different for each subplot
+    # Success rate: Cool colors (blues and greens)
+    success_colors = {
+        "low_light": "#2E86AB",  # Deep blue
+        "non_uniform": "#06A77D",  # Teal green
+        "overall": "#6B6B6B",  # Gray
+    }
+
+    # Processing time: Warm colors (oranges and reds)
+    time_colors = {
+        "low_light": "#E07A5F",  # Coral/salmon
+        "non_uniform": "#F4A261",  # Orange
+    }
+
+    # Plot (a) - Success Rates
+    bars1 = ax1.bar(
+        x - bar_width,
+        success_data["low_light"],
+        bar_width,
+        label=dataset_labels["low_light"],
+        color=success_colors["low_light"],
+        alpha=0.9,
+    )
+    bars2 = ax1.bar(
+        x,
+        success_data["non_uniform"],
+        bar_width,
+        label=dataset_labels["non_uniform"],
+        color=success_colors["non_uniform"],
+        alpha=0.9,
+    )
+    bars3 = ax1.bar(
+        x + bar_width,
+        success_data["overall"],
+        bar_width,
+        label="Overall",
+        color=success_colors["overall"],
+        alpha=0.9,
+    )
+
+    # Add value labels on bars
+    for bars in [bars1, bars2, bars3]:
+        for bar in bars:
+            height = bar.get_height()
+            ax1.text(
+                bar.get_x() + bar.get_width() / 2.0,
+                height,
+                f"{height:.1f}",
+                ha="center",
+                va="bottom",
+                fontsize=6,
+            )
+
+    ax1.set_xlabel("Algorithm", fontsize=8)
+    ax1.set_ylabel("Detection Success Rate (%)", fontsize=8)
+    ax1.set_title("(a) Detection Success Rate", fontsize=9, pad=8)
+    ax1.set_xticks(x)
+    ax1.set_xticklabels(algo_labels, fontsize=7)
+    ax1.legend(fontsize=7, loc="upper left", framealpha=0.9, edgecolor="gray")
+    ax1.tick_params(labelsize=7)
+    ax1.grid(True, alpha=0.2, linestyle="--", axis="y")
+    ax1.set_ylim(
+        0, max(success_data["overall"]) * 1.22
+    )  # Increased to prevent label clipping
+
+    # Plot (b) - Processing Times
+    bars4 = ax2.bar(
+        x - bar_width / 2,
+        time_data["low_light"],
+        bar_width,
+        label=dataset_labels["low_light"],
+        color=time_colors["low_light"],
+        alpha=0.9,
+    )
+    bars5 = ax2.bar(
+        x + bar_width / 2,
+        time_data["non_uniform"],
+        bar_width,
+        label=dataset_labels["non_uniform"],
+        color=time_colors["non_uniform"],
+        alpha=0.9,
+    )
+
+    # Add value labels on bars
+    for bars in [bars4, bars5]:
+        for bar in bars:
+            height = bar.get_height()
+            ax2.text(
+                bar.get_x() + bar.get_width() / 2.0,
+                height,
+                f"{height:.1f}",
+                ha="center",
+                va="bottom",
+                fontsize=6,
+            )
+
+    ax2.set_xlabel("Algorithm", fontsize=8)
+    ax2.set_ylabel("Processing Time (ms)", fontsize=8)
+    ax2.set_title("(b) Average Processing Time", fontsize=9, pad=8)
+    ax2.set_xticks(x)
+    ax2.set_xticklabels(algo_labels, fontsize=7)
+    ax2.legend(fontsize=7, loc="upper left", framealpha=0.9, edgecolor="gray")
+    ax2.tick_params(labelsize=7)
+    ax2.grid(True, alpha=0.2, linestyle="--", axis="y")
+    ax2.set_ylim(
+        0, max(max(time_data["low_light"]), max(time_data["non_uniform"])) * 1.15
+    )
+
+    plt.tight_layout(pad=1.5)
+
+    if save:
+        save_path = (
+            IMAGES_DIR
+            / "experiment"
+            / "display_data"
+            / "algorithm_overall_comparison.pdf"
+        )
+        plt.savefig(save_path, dpi=300, bbox_inches="tight")
+        print(f"\n✓ Plot saved to: {save_path}")
+    else:
+        plt.show()
+
+
+def visualize_retinex_methods_comparison(
+    filename: str = "retinex_methods_comparison.json",
+    save: bool = False,
+) -> None:
+    """Visualize comparison of SSR and SSR-Downsample methods.
+
+    Creates grouped bar charts showing:
+    (a) Detection success rates for each dataset and overall
+    (b) Average processing times for each dataset
+
+    Args:
+        filename: JSON file containing comparison results
+        save: If True, save plot to PDF. If False, display interactively.
+    """
+    # Load results
+    load_path = Path(filename)
+    if not load_path.is_absolute():
+        load_path = DATA_DIR / "experiment" / filename
+
+    with open(load_path, encoding="utf-8") as f:
+        data = json.load(f)
+
+    overall_stats = data["overall_statistics"]
+
+    # Prepare data
+    methods = list(overall_stats.keys())
+    method_labels = [m.replace("_", "-").upper() for m in methods]
+
+    dataset_labels = {"low_light": "Low-light", "non_uniform": "Non-uniform"}
+
+    # Extract success rates
+    success_data = {
+        "low_light": [
+            overall_stats[method]["dataset_results"]["low_light"]["success_rate"]
+            for method in methods
+        ],
+        "non_uniform": [
+            overall_stats[method]["dataset_results"]["non_uniform"]["success_rate"]
+            for method in methods
+        ],
+        "overall": [
+            overall_stats[method]["overall_success_rate"] for method in methods
+        ],
+    }
+
+    # Extract processing times
+    time_data = {
+        "low_light": [
+            overall_stats[method]["dataset_results"]["low_light"]["processing_time"]
+            for method in methods
+        ],
+        "non_uniform": [
+            overall_stats[method]["dataset_results"]["non_uniform"]["processing_time"]
+            for method in methods
+        ],
+    }
+
+    # Create figure with two subplots
+    fig, (ax1, ax2) = plt.subplots(1, 2, figsize=(7, 3.5))
+
+    # Bar width and positions
+    bar_width = 0.25
+    x = np.arange(len(methods))
+
+    # Color schemes - Different for each subplot
+    # Success rate: Purple/Blue tones (scholarly, for accuracy)
+    success_colors = {
+        "low_light": "#5B5EA6",  # Purple-blue
+        "non_uniform": "#3D85C6",  # Blue
+        "overall": "#6B6B6B",  # Gray
+    }
+
+    # Processing time: Green/Yellow tones (for performance/speed)
+    time_colors = {
+        "low_light": "#38761D",  # Dark green
+        "non_uniform": "#93C47D",  # Light green
+    }
+
+    # Plot (a) - Success Rates
+    bars1 = ax1.bar(
+        x - bar_width,
+        success_data["low_light"],
+        bar_width,
+        label=dataset_labels["low_light"],
+        color=success_colors["low_light"],
+        alpha=0.9,
+    )
+    bars2 = ax1.bar(
+        x,
+        success_data["non_uniform"],
+        bar_width,
+        label=dataset_labels["non_uniform"],
+        color=success_colors["non_uniform"],
+        alpha=0.9,
+    )
+    bars3 = ax1.bar(
+        x + bar_width,
+        success_data["overall"],
+        bar_width,
+        label="Overall",
+        color=success_colors["overall"],
+        alpha=0.9,
+    )
+
+    # Add value labels on bars
+    for bars in [bars1, bars2, bars3]:
+        for bar in bars:
+            height = bar.get_height()
+            ax1.text(
+                bar.get_x() + bar.get_width() / 2.0,
+                height,
+                f"{height:.1f}",
+                ha="center",
+                va="bottom",
+                fontsize=6,
+            )
+
+    ax1.set_xlabel("Retinex Method", fontsize=8)
+    ax1.set_ylabel("Detection Success Rate (%)", fontsize=8)
+    ax1.set_title("(a) Detection Success Rate", fontsize=9, pad=8)
+    ax1.set_xticks(x)
+    ax1.set_xticklabels(method_labels, fontsize=7)
+    ax1.legend(fontsize=7, loc="lower right", framealpha=0.9, edgecolor="gray")
+    ax1.tick_params(labelsize=7)
+    ax1.grid(True, alpha=0.2, linestyle="--", axis="y")
+    ax1.set_ylim(
+        0, max(success_data["overall"]) * 1.22
+    )  # Increased to prevent label clipping
+
+    # Plot (b) - Processing Times
+    bars4 = ax2.bar(
+        x - bar_width / 2,
+        time_data["low_light"],
+        bar_width,
+        label=dataset_labels["low_light"],
+        color=time_colors["low_light"],
+        alpha=0.9,
+    )
+    bars5 = ax2.bar(
+        x + bar_width / 2,
+        time_data["non_uniform"],
+        bar_width,
+        label=dataset_labels["non_uniform"],
+        color=time_colors["non_uniform"],
+        alpha=0.9,
+    )
+
+    # Add value labels on bars
+    for bars in [bars4, bars5]:
+        for bar in bars:
+            height = bar.get_height()
+            ax2.text(
+                bar.get_x() + bar.get_width() / 2.0,
+                height,
+                f"{height:.1f}",
+                ha="center",
+                va="bottom",
+                fontsize=6,
+            )
+
+    ax2.set_xlabel("Retinex Method", fontsize=8)
+    ax2.set_ylabel("Processing Time (ms)", fontsize=8)
+    ax2.set_title("(b) Average Processing Time", fontsize=9, pad=8)
+    ax2.set_xticks(x)
+    ax2.set_xticklabels(method_labels, fontsize=7)
+    ax2.legend(fontsize=7, loc="upper right", framealpha=0.9, edgecolor="gray")
+    ax2.tick_params(labelsize=7)
+    ax2.grid(True, alpha=0.2, linestyle="--", axis="y")
+    ax2.set_ylim(
+        0, max(max(time_data["low_light"]), max(time_data["non_uniform"])) * 1.15
+    )
+
+    plt.tight_layout(pad=1.5)
+
+    if save:
+        save_path = (
+            IMAGES_DIR
+            / "experiment"
+            / "display_data"
+            / "retinex_methods_comparison.pdf"
         )
         plt.savefig(save_path, dpi=300, bbox_inches="tight")
         print(f"\n✓ Plot saved to: {save_path}")
