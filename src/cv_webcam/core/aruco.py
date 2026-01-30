@@ -175,6 +175,22 @@ class ArucoDetector:
             return data is not None
         return data is not None and expect_id == data.marker_id
 
+    def get_corners(self, img: MatLike, expect_id: int | None = None) -> MatLike | None:
+        corners, ids = self.detect_markers(img)
+        if ids is None or ids[0] != expect_id:
+            return None
+        return corners[0]
+
+    def calc_distance(self, corners: MatLike) -> float:
+        rvec, tvec = self.single_estimate_pose(corners)
+        return float(np.linalg.norm(tvec))
+
+    @staticmethod
+    def calc_rmse(corners1: MatLike, corners2: MatLike) -> float:
+        return float(
+            np.sqrt(np.mean(np.square(corners1.reshape(-1) - corners2.reshape(-1))))
+        )
+
     def test_detector(self, url: str) -> None:
         cap = cv2.VideoCapture(url)
         if not cap.isOpened():

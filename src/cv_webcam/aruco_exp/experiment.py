@@ -1411,26 +1411,40 @@ def run_experiment() -> None:
         # visualizer.visualize_retinex_methods_comparison(save=True)
 
     if False:
-        img = cv2.imread(
+        img1 = cv2.imread(
             # str(IMAGES_DIR / "experiment" / "low_light" / "img_0_dark_lv1.png"),
-            str(IMAGES_DIR / "experiment" / "non_uniform" / "img_0_sigma500.png"),
+            # str(IMAGES_DIR / "experiment" / "non_uniform" / "img_0_sigma500.png"),
+            str(IMAGES_DIR / "experiment" / "raw" / "img_0.png"),
             cv2.IMREAD_GRAYSCALE,
         )
-        assert img is not None
+        img2 = cv2.imread(
+            str(IMAGES_DIR / "experiment" / "non_uniform" / "img_0_sig800_ci0.6.png"),
+            cv2.IMREAD_GRAYSCALE,
+        )
+        assert img1 is not None and img2 is not None
+
+        detector = create_aruco_detector(marker_length=40)
+        corners1 = detector.get_corners(img1, expect_id=0)
+        corners2 = detector.get_corners(img2, expect_id=0)
+        assert corners1 is not None and corners2 is not None
+
+        print("Corners1:\n", corners1, corners1.shape, corners1.shape[-1])
+        dist1 = detector.calc_distance(corners1)
+        print(dist1)
+
+        print("Corners2:\n", corners2, corners2.shape, corners2.shape[-1])
+        dist2 = detector.calc_distance(corners2)
+        print(dist2)
+
+        print("RMSE:", detector.calc_rmse(corners1, corners2))
+        print("Distance Error:", abs(dist1 - dist2))
 
         # print("original noise: ", analysis.identify_noise(img))
 
-        algo = algorithms.get_algorithm(
-            "retinex",
-            sigma=80,
-            use_log_scale=True,
-            smart_normalize=True,
-            prefilter="gaussian",
-            postfilter="median",
-        )
-        algo(img)
+        # algo = algorithms.optimal_algorithm()
+
         # print("processed noise: ", analysis.identify_noise(processed))
 
-        # cv2.imshow("Processed Image", processed)
+        # cv2.imshow("Raw Image", img)
         # cv2.waitKey(0)
         # cv2.destroyAllWindows()
