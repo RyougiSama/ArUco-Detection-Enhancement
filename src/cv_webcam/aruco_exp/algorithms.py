@@ -228,9 +228,8 @@ def optimal_algorithm() -> PreprocessAlgorithm:
         decomposition_method="ssr_downsample",
         scale_factor=0.1,
         prefilter="gaussian",
-        postfilter="median",
+        postfilter=None,
         prefilter_params={"ksize": (5, 5), "sigma": 0},
-        postfilter_params={"ksize": 3},
     )
 
 

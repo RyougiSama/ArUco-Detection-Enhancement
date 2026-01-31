@@ -12,6 +12,7 @@ from cv_webcam import DATA_DIR, IMAGES_DIR
 from cv_webcam.core import create_aruco_detector
 
 from . import algorithms, visualizer
+from .dataset_generator import DARK_LEVEL_DICT
 
 
 @dataclass
@@ -45,6 +46,95 @@ class ExperimentResult:
             "success_rate": self.success_rate,
             "processing_time": self.processing_time,
             "failed_images": self.failed_images,
+        }
+
+
+@dataclass
+class DegradationLevelResult:
+    """Results for a single degradation level (may aggregate multiple variants)."""
+
+    level: int
+    level_label: str
+    degradation_params: dict
+    detection_count: int
+    total_attempts: int
+    detection_rate: float
+    mean_processing_time: float
+    mean_distance_error: float | None = None
+    std_distance_error: float | None = None
+    mean_rmse: float | None = None
+    std_rmse: float | None = None
+    variant_results: list[dict] = field(default_factory=list)
+
+    def to_dict(self) -> dict:
+        """Convert to dictionary for JSON serialization."""
+        return {
+            "level": self.level,
+            "level_label": self.level_label,
+            "degradation_params": self.degradation_params,
+            "detection_count": self.detection_count,
+            "total_attempts": self.total_attempts,
+            "detection_rate": self.detection_rate,
+            "mean_processing_time": self.mean_processing_time,
+            "mean_distance_error": self.mean_distance_error,
+            "std_distance_error": self.std_distance_error,
+            "mean_rmse": self.mean_rmse,
+            "std_rmse": self.std_rmse,
+            "variant_results": self.variant_results,
+        }
+
+
+@dataclass
+class ImageDegradationExperiment:
+    """Degradation experiment results for a single image."""
+
+    image_id: int
+    image_name: str
+    dataset_type: Literal["low_light", "non_uniform"]
+    algorithm_name: str
+    algorithm_params: dict
+    gt_detected: bool
+    gt_distance: float | None
+    level_results: list[DegradationLevelResult]
+    max_robust_level: int | None = None
+    detection_failure_level: int | None = None
+
+    def to_dict(self) -> dict:
+        """Convert to dictionary for JSON serialization."""
+        return {
+            "image_id": self.image_id,
+            "image_name": self.image_name,
+            "dataset_type": self.dataset_type,
+            "algorithm_name": self.algorithm_name,
+            "algorithm_params": self.algorithm_params,
+            "gt_detected": self.gt_detected,
+            "gt_distance": self.gt_distance,
+            "level_results": [r.to_dict() for r in self.level_results],
+            "max_robust_level": self.max_robust_level,
+            "detection_failure_level": self.detection_failure_level,
+        }
+
+
+@dataclass
+class DegradationRobustnessComparison:
+    """Aggregated degradation robustness results for multiple images."""
+
+    dataset_type: Literal["low_light", "non_uniform"]
+    algorithm_name: str
+    algorithm_params: dict
+    image_experiments: list[ImageDegradationExperiment]
+    aggregate_by_level: dict[int, dict]
+
+    def to_dict(self) -> dict:
+        """Convert to dictionary for JSON serialization."""
+        return {
+            "dataset_type": self.dataset_type,
+            "algorithm_name": self.algorithm_name,
+            "algorithm_params": self.algorithm_params,
+            "image_experiments": [e.to_dict() for e in self.image_experiments],
+            "aggregate_by_level": {
+                str(k): v for k, v in self.aggregate_by_level.items()
+            },
         }
 
 
@@ -393,19 +483,18 @@ def compare_prefilters(
             "scale_factor": 0.1,
         }
 
-    # Always use median postfilter
-    if postfilter is None:
-        postfilter = "median"
-
     configs = []
 
     for filter_name, filter_config in prefilters.items():
         for dataset in datasets:
             params = {
-                "postfilter": postfilter,
-                "postfilter_params": {"ksize": 3},
                 **algorithm_params,
             }
+
+            # Add postfilter if specified
+            if postfilter is not None:
+                params["postfilter"] = postfilter
+                params["postfilter_params"] = {"ksize": 3}
 
             # Handle prefilter configuration
             if "filter" in filter_config:
@@ -427,8 +516,9 @@ def compare_prefilters(
     print(
         f"Algorithm: {algorithm.upper()} (SSR-Downsample, Log Scale, Smart Normalize)"
     )
+    postfilter_info = "Median (3x3)" if postfilter else "None"
     print(
-        f"Postfilter: Median (3x3), Scale Factor: {algorithm_params.get('scale_factor', 0.1)}, "
+        f"Postfilter: {postfilter_info}, Scale Factor: {algorithm_params.get('scale_factor', 0.1)}, "
         f"Sigma: {algorithm_params.get('sigma', 80)}"
     )
     print("=" * 70)
@@ -559,11 +649,11 @@ def compare_smart_normalize(
 ) -> list[ExperimentResult]:
     """Compare Retinex with smart_normalize (gain_compensation) vs cv2.normalize.
 
-    Unified configuration (same as optimal_algorithm):
+    Unified configuration:
     - Retinex: SSR-downsample (scale_factor=0.1, sigma=80)
     - Log scale (use_log_scale=True)
     - Gaussian prefilter (5×5)
-    - Median postfilter (3×3)
+    - Postfilter: None
     - Only compare smart_normalize: True vs False
 
     Args:
@@ -595,8 +685,6 @@ def compare_smart_normalize(
                 "scale_factor": 0.1,
                 "prefilter": "gaussian",
                 "prefilter_params": {"ksize": (5, 5), "sigma": 0},
-                "postfilter": "median",
-                "postfilter_params": {"ksize": 3},
             }
 
             configs.append(
@@ -610,7 +698,7 @@ def compare_smart_normalize(
     print("\n" + "=" * 70)
     print("Smart Normalize Comparison: cv2.normalize vs gain_compensation")
     print("Algorithm: RETINEX SSR-Downsample (scale=0.1, sigma=80)")
-    print("Prefilter: Gaussian (5×5), Postfilter: Median (3×3)")
+    print("Prefilter: Gaussian (5×5), Postfilter: None")
     print("Log scale enabled")
     print(f"Datasets: {', '.join(d.replace('_', ' ').title() for d in datasets)}")
     print("=" * 70)
@@ -926,8 +1014,6 @@ def compare_scale_factor(
                 "scale_factor": scale_factor,
                 "prefilter": "gaussian",
                 "prefilter_params": {"ksize": (5, 5)},
-                "postfilter": "median",
-                "postfilter_params": {"ksize": 3},
             }
 
             configs.append(
@@ -942,7 +1028,7 @@ def compare_scale_factor(
     print("Scale Factor Comparison for SSR with Downsampling")
     print(f"Scale Factors: {', '.join(f'{sf:.2f}' for sf in scale_factors)}")
     print("Config: Log Scale, Smart Normalize")
-    print("Prefilter: Gaussian (5x5), Postfilter: Median (5), Sigma=80")
+    print("Prefilter: Gaussian (5x5), Postfilter: None, Sigma=80")
     if include_baseline:
         print("+ Baseline: Standard SSR (no downsampling)")
     print(f"Datasets: {', '.join(d.replace('_', ' ').title() for d in datasets)}")
@@ -966,8 +1052,6 @@ def compare_scale_factor(
                 "decomposition_method": "ssr",  # Standard SSR without downsampling
                 "prefilter": "gaussian",
                 "prefilter_params": {"ksize": (5, 5)},
-                "postfilter": "median",
-                "postfilter_params": {"ksize": 3},
             }
             baseline_configs.append(
                 ExperimentConfig(
@@ -1081,8 +1165,7 @@ def compare_algorithms_overall(
             "clahe": {
                 "prefilter": "gaussian",
                 "prefilter_params": {"ksize": (5, 5), "sigma": 0},
-                "postfilter": "median",
-                "postfilter_params": {"ksize": 3},
+                "postfilter": None,
             },
             "retinex": {
                 "sigma": 80,
@@ -1092,8 +1175,7 @@ def compare_algorithms_overall(
                 "scale_factor": 0.1,
                 "prefilter": "gaussian",
                 "prefilter_params": {"ksize": (5, 5), "sigma": 0},
-                "postfilter": "median",
-                "postfilter_params": {"ksize": 3},
+                "postfilter": None,
             },
         }
 
@@ -1338,6 +1420,462 @@ def compare_retinex_methods(
     return overall_stats
 
 
+def run_single_image_degradation_experiment(
+    image_id: int,
+    dataset_type: Literal["low_light", "non_uniform"],
+    algorithm: str = "retinex",
+    algorithm_params: dict | None = None,
+) -> ImageDegradationExperiment:
+    """Run degradation level experiment for a single image.
+
+    Args:
+        image_id: Raw image ID (0-31)
+        dataset_type: "low_light" or "non_uniform"
+        algorithm: Preprocessing algorithm name
+        algorithm_params: Algorithm parameters
+
+    Returns:
+        ImageDegradationExperiment with results for all degradation levels
+    """
+    detector = create_aruco_detector(marker_length=40)
+    prep_algo = algorithms.get_algorithm(algorithm, **(algorithm_params or {}))
+
+    # Step 1: Get Ground Truth from raw image
+    raw_path = IMAGES_DIR / "experiment" / "raw" / f"img_{image_id}.png"
+    if not raw_path.exists():
+        raise FileNotFoundError(f"Raw image not found: {raw_path}")
+
+    raw_img = cv2.imread(str(raw_path), cv2.IMREAD_GRAYSCALE)
+    assert raw_img is not None, f"Failed to load image: {raw_path}"
+
+    gt_corners = detector.get_corners(raw_img, expect_id=0)
+    gt_detected = gt_corners is not None
+    gt_distance = detector.calc_distance(gt_corners) if gt_detected else None
+
+    if not gt_detected:
+        print(f"  Warning: img_{image_id} - GT detection failed!")
+
+    # Step 2: Define degradation levels to test
+    if dataset_type == "low_light":
+        level_configs = [
+            {
+                "level": lv,
+                "level_label": f"lv{lv}",
+                "files": [
+                    IMAGES_DIR
+                    / "experiment"
+                    / "low_light"
+                    / f"img_{image_id}_dark_lv{lv}.png"
+                ],
+                "params": {
+                    "gamma": DARK_LEVEL_DICT[lv][0],
+                    "noise": DARK_LEVEL_DICT[lv][1],
+                },
+            }
+            for lv in range(10)
+        ]
+    else:  # non_uniform
+        level_configs = []
+        for idx, sigma in enumerate([200, 350, 500, 650, 800]):
+            files = []
+            for ci in [0.6, 1.4]:
+                path = (
+                    IMAGES_DIR
+                    / "experiment"
+                    / "non_uniform"
+                    / f"img_{image_id}_sig{sigma}_ci{ci}.png"
+                )
+                if path.exists():
+                    files.append(path)
+
+            level_configs.append(
+                {
+                    "level": idx,
+                    "level_label": f"σ={sigma}",
+                    "files": files,
+                    "params": {"sigma": sigma},
+                }
+            )
+
+    # Step 3: Test each degradation level
+    level_results = []
+
+    for config in level_configs:
+        variant_results = []
+
+        for file_path in config["files"]:
+            if not file_path.exists():
+                continue
+
+            img = cv2.imread(str(file_path), cv2.IMREAD_GRAYSCALE)
+            assert img is not None, f"Failed to load image: {file_path}"
+
+            # Preprocess and measure time
+            start_time = time.perf_counter()
+            processed = prep_algo(img)
+            processing_time = time.perf_counter() - start_time
+
+            # Detect marker
+            detected_corners = detector.get_corners(processed, expect_id=0)
+            detected = detected_corners is not None
+
+            # Calculate errors (only if GT valid and detection successful)
+            distance_error = None
+            rmse = None
+            if gt_detected and detected and gt_distance is not None:
+                detected_distance = detector.calc_distance(detected_corners)
+                distance_error = abs(detected_distance - gt_distance)
+                rmse = detector.calc_rmse(detected_corners, gt_corners)
+
+            variant_results.append(
+                {
+                    "file": file_path.name,
+                    "detected": detected,
+                    "processing_time": processing_time,
+                    "distance_error": distance_error,
+                    "rmse": rmse,
+                }
+            )
+
+        # Step 4: Aggregate results for this level
+        if variant_results:
+            detection_count = sum(1 for v in variant_results if v["detected"])
+            total_attempts = len(variant_results)
+
+            valid_errors = [
+                v["distance_error"]
+                for v in variant_results
+                if v["distance_error"] is not None
+            ]
+            valid_rmse = [v["rmse"] for v in variant_results if v["rmse"] is not None]
+
+            level_results.append(
+                DegradationLevelResult(
+                    level=config["level"],
+                    level_label=config["level_label"],
+                    degradation_params=config["params"],
+                    detection_count=detection_count,
+                    total_attempts=total_attempts,
+                    detection_rate=detection_count / total_attempts,
+                    mean_processing_time=float(
+                        np.mean([v["processing_time"] for v in variant_results])
+                    ),
+                    mean_distance_error=float(np.mean(valid_errors))
+                    if valid_errors
+                    else None,
+                    std_distance_error=float(np.std(valid_errors))
+                    if valid_errors
+                    else None,
+                    mean_rmse=float(np.mean(valid_rmse)) if valid_rmse else None,
+                    std_rmse=float(np.std(valid_rmse)) if valid_rmse else None,
+                    variant_results=variant_results,
+                )
+            )
+
+    # Step 5: Calculate robustness metrics
+    max_robust_level = None
+    detection_failure_level = None
+
+    for result in level_results:
+        if result.detection_rate == 1.0:
+            max_robust_level = result.level
+        elif result.detection_rate < 1.0 and detection_failure_level is None:
+            detection_failure_level = result.level
+
+    return ImageDegradationExperiment(
+        image_id=image_id,
+        image_name=f"img_{image_id}",
+        dataset_type=dataset_type,
+        algorithm_name=algorithm,
+        algorithm_params=algorithm_params or {},
+        gt_detected=gt_detected,
+        gt_distance=gt_distance,
+        level_results=level_results,
+        max_robust_level=max_robust_level,
+        detection_failure_level=detection_failure_level,
+    )
+
+
+def aggregate_results_by_level(
+    experiments: list[ImageDegradationExperiment],
+) -> dict[int, dict]:
+    """Aggregate results across all images for each degradation level.
+
+    Args:
+        experiments: List of image degradation experiments
+
+    Returns:
+        Dictionary mapping level to aggregated statistics
+    """
+    # Collect all levels
+    all_levels = set()
+    for exp in experiments:
+        for result in exp.level_results:
+            all_levels.add(result.level)
+
+    aggregated = {}
+
+    for level in sorted(all_levels):
+        # Collect all results for this level
+        level_data = []
+        for exp in experiments:
+            for result in exp.level_results:
+                if result.level == level:
+                    level_data.append(result)
+
+        if not level_data:
+            continue
+
+        # Compute aggregate statistics
+        total_detections = sum(r.detection_count for r in level_data)
+        total_attempts = sum(r.total_attempts for r in level_data)
+
+        distance_errors = [
+            r.mean_distance_error
+            for r in level_data
+            if r.mean_distance_error is not None
+        ]
+        rmse_values = [r.mean_rmse for r in level_data if r.mean_rmse is not None]
+
+        aggregated[level] = {
+            "detection_rate": total_detections / total_attempts
+            if total_attempts > 0
+            else 0,
+            "mean_distance_error": np.mean(distance_errors)
+            if distance_errors
+            else None,
+            "std_distance_error": np.std(distance_errors) if distance_errors else None,
+            "mean_rmse": np.mean(rmse_values) if rmse_values else None,
+            "std_rmse": np.std(rmse_values) if rmse_values else None,
+            "n_images": len(level_data),
+        }
+
+    return aggregated
+
+
+def compare_degradation_robustness(
+    dataset_type: Literal["low_light", "non_uniform"],
+    algorithms_config: dict[str, dict] | None = None,
+    image_ids: list[int] | None = None,
+    filename: str = "degradation_robustness_comparison.json",
+) -> dict[str, DegradationRobustnessComparison]:
+    """Compare degradation robustness of different algorithms.
+
+    Args:
+        dataset_type: Dataset type to test
+        algorithms_config: Algorithm configurations, e.g.:
+            {
+                "none": {"algorithm": "none", "params": {...}},
+                "clahe": {"algorithm": "clahe", "params": {...}},
+                "retinex": {"algorithm": "retinex", "params": {...}},
+            }
+        image_ids: Image IDs to test (None = all)
+        filename: Output JSON filename
+
+    Returns:
+        Dictionary mapping algorithm name to DegradationRobustnessComparison
+    """
+    # Default algorithm configurations
+    if algorithms_config is None:
+        algorithms_config = {
+            "none": {
+                "algorithm": "none",
+                "params": {},
+            },
+            "clahe": {
+                "algorithm": "clahe",
+                "params": {
+                    "clip_limit": 2.0,
+                    "prefilter": "gaussian",
+                    "prefilter_params": {"ksize": (5, 5), "sigma": 0},
+                },
+            },
+            "retinex": {
+                "algorithm": "retinex",
+                "params": {
+                    "sigma": 80,
+                    "use_log_scale": True,
+                    "smart_normalize": True,
+                    "decomposition_method": "ssr_downsample",
+                    "scale_factor": 0.1,
+                    "prefilter": "gaussian",
+                    "prefilter_params": {"ksize": (5, 5), "sigma": 0},
+                },
+            },
+        }
+
+    # Determine images to test
+    if image_ids is None:
+        raw_imgs = sorted((IMAGES_DIR / "experiment" / "raw").glob("img_*.png"))
+        image_ids = [int(p.stem.split("_")[1]) for p in raw_imgs]
+
+    # Run experiments for each algorithm
+    all_results = {}
+
+    for algo_name, algo_config in algorithms_config.items():
+        print("\n" + "=" * 70)
+        print(f"Testing Algorithm: {algo_name.upper()}")
+        print(f"Dataset: {dataset_type.replace('_', ' ').title()}")
+        print("=" * 70)
+
+        image_experiments = []
+
+        for img_id in image_ids:
+            print(f"  Processing img_{img_id}...", end=" ")
+
+            try:
+                result = run_single_image_degradation_experiment(
+                    image_id=img_id,
+                    dataset_type=dataset_type,
+                    algorithm=algo_config["algorithm"],
+                    algorithm_params=algo_config.get("params"),
+                )
+
+                image_experiments.append(result)
+
+                gt_status = "✓" if result.gt_detected else "✗"
+                max_level = (
+                    result.max_robust_level
+                    if result.max_robust_level is not None
+                    else "-"
+                )
+                print(f"GT: {gt_status}, Max robust: lv{max_level}")
+
+            except Exception as e:
+                print(f"Error: {e}")
+                continue
+
+        # Aggregate statistics
+        aggregate_by_level = aggregate_results_by_level(image_experiments)
+
+        all_results[algo_name] = DegradationRobustnessComparison(
+            dataset_type=dataset_type,
+            algorithm_name=algo_name,
+            algorithm_params=algo_config.get("params", {}),
+            image_experiments=image_experiments,
+            aggregate_by_level=aggregate_by_level,
+        )
+
+        # Print summary
+        print(f"\n  Summary for {algo_name.upper()}:")
+        print(
+            f"  {'Level':<8} {'Detection Rate':<16} {'Distance Error':<16} {'RMSE':<12}"
+        )
+        print(f"  {'-' * 60}")
+        for level, stats in sorted(aggregate_by_level.items()):
+            det_rate = stats["detection_rate"]
+            dist_err = stats.get("mean_distance_error")
+            rmse = stats.get("mean_rmse")
+
+            dist_str = f"{dist_err:8.2f}" if dist_err is not None else "     N/A"
+            rmse_str = f"{rmse:8.2f}" if rmse is not None else "     N/A"
+
+            print(
+                f"  {level:<8} {det_rate:>6.1%}           {dist_str}        {rmse_str}"
+            )
+
+    print("\n" + "=" * 70)
+
+    # Save results
+    save_degradation_results(all_results, filename)
+
+    return all_results
+
+
+def save_degradation_results(
+    results: dict[str, DegradationRobustnessComparison], filename: str
+) -> None:
+    """Save degradation robustness results to JSON file.
+
+    Args:
+        results: Dictionary of algorithm results
+        filename: Output filename
+    """
+    output = {name: result.to_dict() for name, result in results.items()}
+    save_path = DATA_DIR / "experiment" / filename
+    save_path.parent.mkdir(parents=True, exist_ok=True)
+
+    with open(save_path, "w", encoding="utf-8") as f:
+        json.dump(output, f, indent=2)
+
+    print(f"\nResults saved to: {save_path}")
+
+
+def load_degradation_results(filename: str) -> dict:
+    """Load degradation robustness results from JSON file.
+
+    Args:
+        filename: Input filename
+
+    Returns:
+        Dictionary of results
+    """
+    load_path = DATA_DIR / "experiment" / filename
+    with open(load_path, encoding="utf-8") as f:
+        return json.load(f)
+
+
+def compare_postfilter_impact_on_degradation(
+    dataset_type: Literal["low_light", "non_uniform"],
+    image_ids: list[int] | None = None,
+    filename: str = "postfilter_impact_degradation.json",
+) -> dict[str, DegradationRobustnessComparison]:
+    """Compare impact of postfilter (median 3×3) on degradation robustness.
+
+    Tests the same algorithm configuration with and without postfilter to
+    isolate the effect of median filtering on accuracy metrics.
+
+    Args:
+        dataset_type: Dataset type to test
+        image_ids: Image IDs to test (None = all)
+        filename: Output JSON filename
+
+    Returns:
+        Dictionary with "with_postfilter" and "without_postfilter" results
+    """
+    algorithms_config = {
+        "without_postfilter": {
+            "algorithm": "retinex",
+            "params": {
+                "sigma": 80,
+                "use_log_scale": True,
+                "smart_normalize": True,
+                "decomposition_method": "ssr_downsample",
+                "scale_factor": 0.1,
+                "prefilter": "gaussian",
+                "prefilter_params": {"ksize": (5, 5), "sigma": 0},
+                "postfilter": None,  # No postfilter
+            },
+        },
+        "with_postfilter": {
+            "algorithm": "retinex",
+            "params": {
+                "sigma": 80,
+                "use_log_scale": True,
+                "smart_normalize": True,
+                "decomposition_method": "ssr_downsample",
+                "scale_factor": 0.1,
+                "prefilter": "gaussian",
+                "prefilter_params": {"ksize": (5, 5), "sigma": 0},
+                "postfilter": "median",
+                "postfilter_params": {"ksize": 3},
+            },
+        },
+    }
+
+    print("\n" + "=" * 70)
+    print("Postfilter Impact Analysis: Median 3×3 Effect on Degradation Robustness")
+    print(f"Dataset: {dataset_type.replace('_', ' ').title()}")
+    print("=" * 70)
+
+    return compare_degradation_robustness(
+        dataset_type=dataset_type,
+        algorithms_config=algorithms_config,
+        image_ids=image_ids,
+        filename=filename,
+    )
+
+
 def run_experiment() -> None:
     """Main experiment runner with various demo options."""
     # visualizer.draw_low_light_imgs(save=True)
@@ -1357,7 +1895,7 @@ def run_experiment() -> None:
         #     filename="smart_normalize_linear_prefilter.json", save=True
         # )
 
-        # compare_smart_normalize(filename="smart_normalize_log_prefilter.json")
+        compare_smart_normalize(filename="smart_normalize_log_prefilter.json")
 
         visualizer.visualize_smart_normalize_comparison(
             filename="smart_normalize_log_prefilter.json", save=True
@@ -1369,25 +1907,28 @@ def run_experiment() -> None:
 
     if False:
         # Compare prefilter options
-        compare_prefilters(
-            postfilter="median", filename="prefilter_use_postmedian_comparison.json"
-        )
-        visualizer.visualize_prefilter_comparison(
-            filename="prefilter_use_postmedian_comparison.json", save=True
-        )
+        compare_prefilters()
+        visualizer.visualize_prefilter_comparison(save=True)
+
+        # compare_prefilters(
+        #     postfilter="median", filename="prefilter_use_postmedian_comparison.json"
+        # )
+        # visualizer.visualize_prefilter_comparison(
+        #     filename="prefilter_use_postmedian_comparison.json", save=True
+        # )
 
     if False:
         # Compare postfilter options
-        # compare_postfilter()
+        compare_postfilter()
         visualizer.visualize_postfilter_comparison(save=True)
 
-        # compare_postfilter(
-        #     use_smart_normalize=False,
-        #     filename="postfilter_no_smartnormalize_comparison.json",
-        # )
-        # visualizer.visualize_postfilter_comparison(
-        #     filename="postfilter_no_smartnormalize_comparison.json", save=True
-        # )
+        compare_postfilter(
+            use_smart_normalize=False,
+            filename="postfilter_no_smartnormalize_comparison.json",
+        )
+        visualizer.visualize_postfilter_comparison(
+            filename="postfilter_no_smartnormalize_comparison.json", save=True
+        )
 
     if False:
         compare_retinex_decomposition(
@@ -1398,7 +1939,7 @@ def run_experiment() -> None:
         )
 
     if False:
-        # compare_scale_factor(filename="scale_factor_comparison_ssr_downsample.json")
+        compare_scale_factor(filename="scale_factor_comparison_ssr_downsample.json")
         visualizer.visualize_scale_factor_comparison(
             filename="scale_factor_comparison_ssr_downsample.json", save=True
         )
@@ -1410,11 +1951,48 @@ def run_experiment() -> None:
         # compare_retinex_methods()
         # visualizer.visualize_retinex_methods_comparison(save=True)
 
+    if True:
+        # compare_degradation_robustness(
+        #     dataset_type="low_light", filename="degradation_robustness_low_light.json"
+        # )
+
+        visualizer.visualize_degradation_robustness(
+            filename="degradation_robustness_low_light.json", save=True
+        )
+
+        # compare_degradation_robustness(
+        #     dataset_type="non_uniform",
+        #     filename="degradation_robustness_non_uniform.json",
+        # )
+
+        visualizer.visualize_degradation_robustness(
+            filename="degradation_robustness_non_uniform.json", save=True
+        )
+
+    if False:
+        # compare_postfilter_impact_on_degradation(
+        #     dataset_type="low_light",
+        #     filename="postfilter_impact_low_light.json",
+        # )
+
+        visualizer.visualize_degradation_robustness(
+            filename="postfilter_impact_low_light.json", save=True
+        )
+
+        # compare_postfilter_impact_on_degradation(
+        #     dataset_type="non_uniform",
+        #     filename="postfilter_impact_non_uniform.json",
+        # )
+
+        visualizer.visualize_degradation_robustness(
+            filename="postfilter_impact_non_uniform.json", save=True
+        )
+
     if False:
         img1 = cv2.imread(
             # str(IMAGES_DIR / "experiment" / "low_light" / "img_0_dark_lv1.png"),
             # str(IMAGES_DIR / "experiment" / "non_uniform" / "img_0_sigma500.png"),
-            str(IMAGES_DIR / "experiment" / "raw" / "img_0.png"),
+            str(IMAGES_DIR / "experiment" / "raw" / "img_11.png"),
             cv2.IMREAD_GRAYSCALE,
         )
         img2 = cv2.imread(

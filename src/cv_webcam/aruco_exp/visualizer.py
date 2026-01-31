@@ -2465,3 +2465,386 @@ def visualize_retinex_parameter_space(
         print(f"\n✓ Parameter space plot saved to: {save_path}")
     else:
         plt.show()
+
+
+def visualize_degradation_robustness(
+    filename: str = "degradation_robustness_comparison.json",
+    save: bool = False,
+) -> None:
+    """Visualize degradation robustness comparison across algorithms.
+
+    Creates three subplots showing:
+    (a) Detection success rate vs degradation level
+    (b) Average distance error vs degradation level
+    (c) Average RMSE vs degradation level
+
+    Args:
+        filename: JSON file containing degradation robustness results
+        save: If True, save plot to PDF. If False, display interactively.
+    """
+    from pathlib import Path
+
+    # Load results
+    load_path = Path(filename)
+    if not load_path.is_absolute():
+        load_path = DATA_DIR / "experiment" / filename
+
+    with open(load_path, encoding="utf-8") as f:
+        results = json.load(f)
+
+    # Create figure with 3 subplots (vertical layout)
+    fig, (ax1, ax2, ax3) = plt.subplots(3, 1, figsize=(7, 8))
+
+    # Paper-friendly color scheme with high contrast
+    algo_colors = {
+        "none": "#CC3311",  # Red
+        "clahe": "#0173B2",  # Blue
+        "retinex": "#029E73",  # Green
+        "without_postfilter": "#DE8F05",  # Orange
+        "with_postfilter": "#6A3D9A",  # Purple
+    }
+
+    # Uniform marker styles (all circles)
+    algo_markers = {
+        "none": "o",
+        "clahe": "o",
+        "retinex": "o",
+        "without_postfilter": "o",
+        "with_postfilter": "o",
+    }
+
+    # Line styles for additional differentiation
+    algo_linestyles = {
+        "none": "-",
+        "clahe": "-",
+        "retinex": "-",
+        "without_postfilter": "-",
+        "with_postfilter": "-",
+    }
+
+    # Get algorithm order (prioritize common names)
+    preferred_order = [
+        "none",
+        "clahe",
+        "retinex",
+        "without_postfilter",
+        "with_postfilter",
+    ]
+    algo_order = []
+    for preferred in preferred_order:
+        if preferred in results:
+            algo_order.append(preferred)
+    for algo in results:
+        if algo not in algo_order:
+            algo_order.append(algo)
+
+    # Collect data for each algorithm
+    all_distance_errors = []
+    all_rmse_values = []
+    all_detection_rates = {}  # Store detection rates by level for annotation
+
+    for algo_idx, algo_name in enumerate(algo_order):
+        algo_data = results[algo_name]
+        aggregate = algo_data["aggregate_by_level"]
+
+        # Sort by level
+        levels = sorted([int(k) for k in aggregate.keys()])
+        level_labels = []
+
+        detection_rates = []
+        distance_errors = []
+        distance_error_stds = []
+        rmse_values = []
+        rmse_stds = []
+
+        for level in levels:
+            level_str = str(level)
+            stats = aggregate[level_str]
+
+            # Get level label from first image experiment
+            if algo_data["image_experiments"]:
+                for exp in algo_data["image_experiments"]:
+                    for result in exp["level_results"]:
+                        if result["level"] == level:
+                            level_labels.append(result["level_label"])
+                            break
+                    else:
+                        continue
+                    break
+
+            det_rate = stats["detection_rate"] * 100
+            detection_rates.append(det_rate)
+
+            # Store detection rates for each algorithm and level
+            if level_str not in all_detection_rates:
+                all_detection_rates[level_str] = {}
+            all_detection_rates[level_str][algo_name] = det_rate
+
+            # Distance errors
+            mean_dist_err = stats.get("mean_distance_error")
+            std_dist_err = stats.get("std_distance_error")
+            distance_errors.append(
+                mean_dist_err if mean_dist_err is not None else np.nan
+            )
+            distance_error_stds.append(std_dist_err if std_dist_err is not None else 0)
+
+            # RMSE
+            mean_rmse = stats.get("mean_rmse")
+            std_rmse = stats.get("std_rmse")
+            rmse_values.append(mean_rmse if mean_rmse is not None else np.nan)
+            rmse_stds.append(std_rmse if std_rmse is not None else 0)
+
+        # Collect for range calculation
+        all_distance_errors.extend([v for v in distance_errors if not np.isnan(v)])
+        all_rmse_values.extend([v for v in rmse_values if not np.isnan(v)])
+
+        # Use appropriate labels
+        if not level_labels:
+            level_labels = [f"lv{lv}" for lv in levels]
+
+        x = np.arange(len(levels))
+        color = algo_colors.get(algo_name, "#333333")
+        marker = algo_markers.get(algo_name, "o")
+        linestyle = algo_linestyles.get(algo_name, "-")
+        label = algo_name.replace("_", " ").upper()
+
+        # Plot (a) - Detection Success Rate
+        ax1.plot(
+            x,
+            detection_rates,
+            marker=marker,
+            color=color,
+            label=label,
+            linewidth=1.5,
+            markersize=4,
+            linestyle=linestyle,
+            alpha=0.9,
+        )
+
+        # Plot (b) - Distance Error
+        # First plot the main line with valid data
+        ax2.plot(
+            x,
+            distance_errors,
+            marker=marker,
+            color=color,
+            label=label,
+            linewidth=1.5,
+            markersize=4,
+            linestyle=linestyle,
+            alpha=0.9,
+        )
+
+        # Find segments with NaN points and draw dashed lines
+        i = 0
+        while i < len(distance_errors):
+            if np.isnan(distance_errors[i]):
+                # Found start of NaN segment
+                start_valid_idx = (
+                    i - 1 if i > 0 and not np.isnan(distance_errors[i - 1]) else None
+                )
+
+                # Find all consecutive NaN points
+                nan_indices = [i]
+                j = i + 1
+                while j < len(distance_errors) and np.isnan(distance_errors[j]):
+                    nan_indices.append(j)
+                    j += 1
+
+                # Find next valid point after NaN segment
+                end_valid_idx = j if j < len(distance_errors) else None
+
+                # Draw one continuous dashed line through the NaN segment
+                if start_valid_idx is not None or end_valid_idx is not None:
+                    # Build segment coordinates
+                    seg_x = []
+                    seg_y = []
+
+                    # Add starting valid point if exists
+                    if start_valid_idx is not None:
+                        seg_x.append(x[start_valid_idx])
+                        seg_y.append(distance_errors[start_valid_idx])
+
+                    # Add all NaN points at y=0
+                    seg_x.extend([x[k] for k in nan_indices])
+                    seg_y.extend([0] * len(nan_indices))
+
+                    # Add ending valid point if exists
+                    if end_valid_idx is not None:
+                        seg_x.append(x[end_valid_idx])
+                        seg_y.append(distance_errors[end_valid_idx])
+
+                    ax2.plot(
+                        seg_x,
+                        seg_y,
+                        linestyle="--",
+                        color=color,
+                        linewidth=1.0,
+                        alpha=0.5,
+                    )
+
+                # Mark all NaN points
+                for nan_idx in nan_indices:
+                    ax2.plot(
+                        x[nan_idx],
+                        0,
+                        marker="x",
+                        color=color,
+                        markersize=6,
+                        markeredgewidth=1.5,
+                        alpha=0.6,
+                    )
+                    ax2.text(
+                        x[nan_idx],
+                        0,
+                        "N/A",
+                        fontsize=5,
+                        ha="center",
+                        va="top",
+                        color=color,
+                        alpha=0.7,
+                    )
+
+                i = j  # Skip past this NaN segment
+            else:
+                i += 1
+
+        # Plot (c) - RMSE
+        # First plot the main line with valid data
+        ax3.plot(
+            x,
+            rmse_values,
+            marker=marker,
+            color=color,
+            label=label,
+            linewidth=1.5,
+            markersize=4,
+            linestyle=linestyle,
+            alpha=0.9,
+        )
+
+        # Find segments with NaN points and draw dashed lines
+        i = 0
+        while i < len(rmse_values):
+            if np.isnan(rmse_values[i]):
+                # Found start of NaN segment
+                start_valid_idx = (
+                    i - 1 if i > 0 and not np.isnan(rmse_values[i - 1]) else None
+                )
+
+                # Find all consecutive NaN points
+                nan_indices = [i]
+                j = i + 1
+                while j < len(rmse_values) and np.isnan(rmse_values[j]):
+                    nan_indices.append(j)
+                    j += 1
+
+                # Find next valid point after NaN segment
+                end_valid_idx = j if j < len(rmse_values) else None
+
+                # Draw one continuous dashed line through the NaN segment
+                if start_valid_idx is not None or end_valid_idx is not None:
+                    # Build segment coordinates
+                    seg_x = []
+                    seg_y = []
+
+                    # Add starting valid point if exists
+                    if start_valid_idx is not None:
+                        seg_x.append(x[start_valid_idx])
+                        seg_y.append(rmse_values[start_valid_idx])
+
+                    # Add all NaN points at y=0
+                    seg_x.extend([x[k] for k in nan_indices])
+                    seg_y.extend([0] * len(nan_indices))
+
+                    # Add ending valid point if exists
+                    if end_valid_idx is not None:
+                        seg_x.append(x[end_valid_idx])
+                        seg_y.append(rmse_values[end_valid_idx])
+
+                    ax3.plot(
+                        seg_x,
+                        seg_y,
+                        linestyle="--",
+                        color=color,
+                        linewidth=1.0,
+                        alpha=0.5,
+                    )
+
+                # Mark all NaN points
+                for nan_idx in nan_indices:
+                    ax3.plot(
+                        x[nan_idx],
+                        0,
+                        marker="x",
+                        color=color,
+                        markersize=6,
+                        markeredgewidth=1.5,
+                        alpha=0.6,
+                    )
+                    ax3.text(
+                        x[nan_idx],
+                        0,
+                        "N/A",
+                        fontsize=5,
+                        ha="center",
+                        va="top",
+                        color=color,
+                        alpha=0.7,
+                    )
+
+                i = j  # Skip past this NaN segment
+            else:
+                i += 1
+
+    # Configure subplot (a) - Detection Success Rate
+    ax1.set_ylabel("Detection Success Rate (%)", fontsize=8, fontweight="bold")
+    ax1.set_title("(a) Detection Success Rate", fontsize=9, fontweight="bold", pad=8)
+    ax1.set_xticks(np.arange(len(level_labels)))
+    ax1.set_xticklabels(level_labels, fontsize=7, rotation=0)
+    ax1.legend(fontsize=7, loc="best", framealpha=0.9, edgecolor="gray")
+    ax1.tick_params(labelsize=7)
+    ax1.grid(True, alpha=0.2, linestyle="--", axis="y")
+    ax1.set_ylim(0, 105)
+
+    # Configure subplot (b) - Distance Error
+    ax2.set_ylabel("Average Distance Error (mm)", fontsize=8, fontweight="bold")
+    ax2.set_title("(b) Average Distance Error", fontsize=9, fontweight="bold", pad=8)
+    ax2.set_xticks(np.arange(len(level_labels)))
+    ax2.set_xticklabels(level_labels, fontsize=7, rotation=0)
+    ax2.legend(fontsize=7, loc="best", framealpha=0.9, edgecolor="gray")
+    ax2.tick_params(labelsize=7)
+    ax2.grid(True, alpha=0.2, linestyle="--", axis="y")
+    if all_distance_errors:
+        y_max = max(all_distance_errors)
+        ax2.set_ylim(bottom=0, top=y_max * 1.12)
+
+    # Configure subplot (c) - RMSE
+    ax3.set_xlabel("Degradation Level", fontsize=8, fontweight="bold")
+    ax3.set_ylabel("Average RMSE (pixels)", fontsize=8, fontweight="bold")
+    ax3.set_title("(c) Average Corner RMSE", fontsize=9, fontweight="bold", pad=8)
+    ax3.set_xticks(np.arange(len(level_labels)))
+    ax3.set_xticklabels(level_labels, fontsize=7, rotation=0)
+    ax3.legend(fontsize=7, loc="best", framealpha=0.9, edgecolor="gray")
+    ax3.tick_params(labelsize=7)
+    ax3.grid(True, alpha=0.2, linestyle="--", axis="y")
+    if all_rmse_values:
+        y_max_rmse = max(all_rmse_values)
+        ax3.set_ylim(bottom=0, top=y_max_rmse * 1.12)
+    else:
+        # Fallback if no RMSE data
+        ax3.set_ylim(bottom=0, top=5)
+
+    plt.tight_layout(pad=1.5)
+
+    if save:
+        save_path = (
+            IMAGES_DIR
+            / "experiment"
+            / "display_data"
+            / filename.replace(".json", ".pdf")
+        )
+        plt.savefig(save_path, dpi=300, bbox_inches="tight")
+        print(f"\n✓ Plot saved to: {save_path}")
+    else:
+        plt.show()

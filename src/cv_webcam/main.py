@@ -110,7 +110,7 @@ def main() -> None:
 
     # Option 5: Capture baseline images from webcam
     if False:
-        make_baseline_imgs("https://192.168.0.103:8080/video")
+        make_baseline_imgs("https://192.168.0.101:8080/video")
 
     # Option 6: Generate degraded datasets
     if False:
